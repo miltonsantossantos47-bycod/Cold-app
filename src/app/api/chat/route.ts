@@ -127,7 +127,7 @@ export async function POST(req: Request) {
   if (erroArm) return NextResponse.json({ error: erroArm }, { status: 500 });
 
   const dia = hojeEmLuanda();
-  const limite = limiteDiario();
+  const limite = limiteDiario(codigo);
   let usadas = 0;
   try {
     usadas = await lerTrocasDoDia(codigo, dia);
@@ -136,7 +136,11 @@ export async function POST(req: Request) {
   }
   if (tipo === "normal" && usadas >= limite) {
     return NextResponse.json(
-      { error: `Atingiste o limite de ${limite} trocas por hoje. Volta amanhã.`, restantes: 0, limite },
+      {
+        error: `Atingiste o limite de ${limite} trocas por hoje. O limite renova à meia-noite (00:00, hora de Luanda).`,
+        restantes: 0,
+        limite,
+      },
       { status: 429 }
     );
   }
@@ -183,10 +187,14 @@ export async function POST(req: Request) {
     .join("\n");
 
   // 4) Só conta a troca (e os tokens) quando a resposta chegou bem.
-  try {
-    await registarTroca(codigo, dia, data?.usage?.input_tokens ?? 0, data?.usage?.output_tokens ?? 0);
-  } catch (e) {
-    console.error("Falhou o registo de uso:", e);
+  // (2 tentativas: se o registo falhar, o limite deixava de contar essa troca)
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    try {
+      await registarTroca(codigo, dia, data?.usage?.input_tokens ?? 0, data?.usage?.output_tokens ?? 0);
+      break;
+    } catch (e) {
+      console.error(`Falhou o registo de uso (tentativa ${tentativa}):`, e);
+    }
   }
 
   const estado = lerEstado(texto);

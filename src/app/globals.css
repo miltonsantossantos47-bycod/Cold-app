@@ -109,6 +109,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- Acesso, contador, admin ---------- */
 .hero .note { margin: 14px auto 0; font-size: 14px; }
+.header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .counter { color: var(--text-muted); font-size: 13px; background: var(--panel-2); border-radius: 999px; padding: 4px 12px; }
 
@@ -129,3 +130,64 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .table-wrap th, .table-wrap td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .table-wrap th { background: var(--panel-2); font-weight: 600; }
 .table-wrap tr:last-child td { border-bottom: 0; }
+
+/* ---------- Barra lateral de chats ---------- */
+.menu-btn {
+  display: none; align-items: center; justify-content: center; width: 38px; height: 38px;
+  border: 1px solid var(--border); background: transparent; border-radius: 10px; cursor: pointer; font-size: 18px;
+}
+.chat-main { flex: 1; display: flex; min-height: 0; }
+.chat-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sidebar {
+  width: 280px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 14px 12px; gap: 12px; min-height: 0;
+}
+.sidebar-new { width: 100%; text-align: center; padding: 10px 16px; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.filter {
+  border: 1px solid var(--border); background: transparent; border-radius: 999px; padding: 4px 12px;
+  font-size: 13px; cursor: pointer; color: var(--text-muted);
+}
+.filter.ativo { background: var(--accent); color: #fff; border-color: var(--accent); }
+.chat-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.group-title { font-size: 12px; font-weight: 600; color: var(--text-muted); padding: 10px 8px 4px; }
+.chat-item { display: flex; align-items: center; border-radius: 10px; }
+.chat-item:hover, .chat-item.ativo { background: var(--panel-2); }
+.chat-item-main {
+  flex: 1; min-width: 0; text-align: left; background: transparent; border: 0; cursor: pointer;
+  padding: 8px 10px; display: flex; flex-direction: column;
+}
+.chat-item-main .t { font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-item-main .a { font-size: 12px; color: var(--text-muted); }
+.icon-btn {
+  border: 0; background: transparent; cursor: pointer; color: var(--text-muted);
+  width: 28px; height: 28px; border-radius: 8px; font-size: 13px; flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--border); color: var(--text); }
+.empty { color: var(--text-muted); font-size: 13.5px; padding: 8px; }
+.sidebar-foot { border-top: 1px solid var(--border); padding-top: 10px; }
+.sidebar-foot .btn { width: 100%; }
+.sidebar-overlay { display: none; }
+.form-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+@media (max-width: 800px) {
+  .menu-btn { display: inline-flex; }
+  .chat-header { padding: 10px 12px; }
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: min(300px, 86vw);
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform .2s, visibility .2s; box-shadow: 2px 0 16px rgba(37, 52, 64, .18);
+  }
+  .sidebar.open { transform: none; visibility: visible; }
+  .sidebar-overlay { display: block; position: fixed; inset: 0; background: rgba(37, 52, 64, .35); z-index: 20; }
+}
+
+.aviso {
+  max-width: 760px; margin: 0 auto 10px; padding: 10px 14px; border: 1px solid var(--border);
+  background: var(--panel-2); border-radius: 10px; font-size: 14px; color: var(--text);
+}
+.aviso.erro { border-color: #c9a0a0; background: #f8eeee; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.instalar { margin-bottom: 8px; }
+.instalar .btn { width: 100%; }
+.ajuda { font-size: 13px; color: var(--text-muted); line-height: 1.45; margin: 8px 2px 0; }

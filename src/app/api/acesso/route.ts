@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   if (erroArm) return NextResponse.json({ error: erroArm }, { status: 500 });
 
   try {
-    const limite = limiteDiario();
+    const limite = limiteDiario(body?.codigo);
     const usadas = await lerTrocasDoDia(normalizarCodigo(body?.codigo), hojeEmLuanda());
     return NextResponse.json({ ok: true, tipo, restantes: Math.max(0, limite - usadas), limite });
   } catch {
