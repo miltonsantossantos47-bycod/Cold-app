@@ -54,3 +54,14 @@ export function hojeEmLuanda(): string {
 export function diaEmLuandaHaDias(dias: number): string {
   return new Date(Date.now() + 60 * 60 * 1000 - dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
+
+// Datas como texto AAAA-MM-DD (dias de Luanda).
+export function somarDias(dia: string, n: number): string {
+  const d = new Date(dia + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+export function diasEntre(de: string, ate: string): number {
+  return Math.round((Date.parse(ate + "T00:00:00Z") - Date.parse(de + "T00:00:00Z")) / 86400000);
+}

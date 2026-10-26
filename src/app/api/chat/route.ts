@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { SYSTEM_PROMPT } from "../../../lib/system-prompt";
 import { curriculoParaPrompt } from "../../../lib/curriculo";
-import {
-  haCodigosConfigurados,
-  hojeEmLuanda,
-  limiteDiario,
-  normalizarCodigo,
-  tipoDoCodigo,
-} from "../../../lib/acesso";
+import { haCodigosConfigurados, hojeEmLuanda, normalizarCodigo } from "../../../lib/acesso";
+import { temSupabase } from "../../../lib/acessos";
+import { resolverAcesso } from "../../../lib/assinatura";
+import { formatarData } from "../../../lib/planos";
 import { erroDeArmazenamento, lerTrocasDoDia, registarTroca } from "../../../lib/uso";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -90,7 +87,7 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-  if (!haCodigosConfigurados()) {
+  if (!haCodigosConfigurados() && !temSupabase()) {
     return NextResponse.json(
       { error: "Ainda não há códigos de acesso configurados (CODIGOS_ACESSO no .env.local)." },
       { status: 500 }
@@ -105,10 +102,32 @@ export async function POST(req: Request) {
   }
 
   // 1) Quem é? Sem código válido não gasta um cêntimo.
-  const tipo = tipoDoCodigo(body.codigo);
-  if (!tipo) {
-    return NextResponse.json({ error: "Código de acesso inválido.", codigoInvalido: true }, { status: 401 });
+  let acesso;
+  try {
+    acesso = await resolverAcesso(body.codigo);
+  } catch {
+    return NextResponse.json({ error: "Não consegui verificar o teu acesso." }, { status: 500 });
   }
+  if (!acesso.ok) {
+    if (acesso.motivo === "invalido") {
+      return NextResponse.json({ error: "Código de acesso inválido.", codigoInvalido: true }, { status: 401 });
+    }
+    if (acesso.motivo === "inativo") {
+      return NextResponse.json(
+        { error: "Este código foi desativado. Fala com quem te deu o código.", inativo: true },
+        { status: 403 }
+      );
+    }
+    return NextResponse.json(
+      {
+        error: `A tua assinatura ${acesso.plano} terminou em ${formatarData(acesso.validoAte)}. Renova para continuares a estudar.`,
+        expirado: true,
+        validoAte: acesso.validoAte,
+      },
+      { status: 403 }
+    );
+  }
+  const tipo = acesso.tipo;
   const codigo = normalizarCodigo(body.codigo);
 
   const messages = limparMensagens(body.messages);
@@ -127,7 +146,7 @@ export async function POST(req: Request) {
   if (erroArm) return NextResponse.json({ error: erroArm }, { status: 500 });
 
   const dia = hojeEmLuanda();
-  const limite = limiteDiario(codigo);
+  const limite = acesso.tipo === "normal" ? acesso.limite : 0;
   let usadas = 0;
   try {
     usadas = await lerTrocasDoDia(codigo, dia);

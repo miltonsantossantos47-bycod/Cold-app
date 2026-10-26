@@ -15,7 +15,7 @@ export type LinhaUso = {
 
 const FICHEIRO = path.join(process.cwd(), ".data", "uso.json");
 
-function supabase(): { url: string; key: string } | null {
+export function supabase(): { url: string; key: string } | null {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   return url && key ? { url: url.replace(/\/$/, ""), key } : null;
@@ -31,7 +31,7 @@ export function erroDeArmazenamento(): string | null {
 
 // As chaves novas da Supabase (sb_secret_...) vão só no cabeçalho "apikey".
 // As chaves antigas (service_role, que começam por "eyJ") também vão em "Authorization".
-function cabecalhos(key: string): Record<string, string> {
+export function cabecalhos(key: string): Record<string, string> {
   const h: Record<string, string> = { apikey: key, "content-type": "application/json" };
   if (key.startsWith("eyJ")) h.Authorization = `Bearer ${key}`;
   return h;

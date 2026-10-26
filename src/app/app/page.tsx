@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CURRICULO } from "../../lib/curriculo";
+import { formatarData } from "../../lib/planos";
 import InstalarApp from "./instalar";
 
 type Msg = { role: "user" | "assistant"; content: string; hidden?: boolean };
@@ -207,6 +208,9 @@ export default function ChatPage() {
   const [ritmo, setRitmo] = useState("");
   // limiteOk = o servidor confirmou o limite de hoje (sem isso, o chat fica bloqueado)
   const [limiteOk, setLimiteOk] = useState(false);
+  // bloqueio = assinatura terminada ou código desativado (o código fica guardado; ao renovar, volta a funcionar)
+  const [bloqueio, setBloqueio] = useState("");
+  const [assinatura, setAssinatura] = useState<{ plano: string | null; validoAte: string | null; diasRestantes: number | null } | null>(null);
   const [erroLimite, setErroLimite] = useState("");
 
   const chat = chats.find((c) => c.id === ativoId) ?? null;
@@ -228,9 +232,17 @@ export default function ChatPage() {
         return;
       }
       const d = await res.json().catch(() => null);
+      if (res.status === 403 && d && (d.expirado || d.inativo)) {
+        setBloqueio(d.error ?? "O teu acesso está suspenso.");
+        setLimiteOk(false);
+        setErroLimite("");
+        return;
+      }
       if (!res.ok || !d) throw new Error("falhou");
       setRestantes(d.restantes ?? null);
       setLimite(d.limite ?? null);
+      setAssinatura(d.plano ? { plano: d.plano, validoAte: d.validoAte ?? null, diasRestantes: d.diasRestantes ?? null } : null);
+      setBloqueio("");
       setLimiteOk(true);
       setErroLimite("");
     } catch {
@@ -330,11 +342,22 @@ export default function ChatPage() {
         body: JSON.stringify({ codigo: c }),
       });
       const d = await res.json();
+      if (res.status === 403 && (d.expirado || d.inativo)) {
+        // o código é válido mas está suspenso: entra, com o aviso e o link para renovar
+        gravarStorage(CODIGO_KEY, c);
+        setCodigo(c);
+        setBloqueio(d.error);
+        setLimiteOk(false);
+        setCodigoInput("");
+        return;
+      }
       if (!res.ok) throw new Error(d.error ?? "Código inválido.");
       gravarStorage(CODIGO_KEY, c);
       setCodigo(c);
       setRestantes(d.restantes ?? null);
       setLimite(d.limite ?? null);
+      setAssinatura(d.plano ? { plano: d.plano, validoAte: d.validoAte ?? null, diasRestantes: d.diasRestantes ?? null } : null);
+      setBloqueio("");
       setLimiteOk(true);
       setErroLimite("");
       setCodigoInput("");
@@ -350,6 +373,8 @@ export default function ChatPage() {
     setCodigo(null);
     setRestantes(null);
     setLimite(null);
+    setAssinatura(null);
+    setBloqueio("");
     setMenuAberto(false);
   }
 
@@ -371,6 +396,11 @@ export default function ChatPage() {
         apagarStorage(CODIGO_KEY);
         setCodigo(null);
         setErroCodigo("O teu código deixou de ser válido. Introduz outro.");
+        return;
+      }
+      if (res.status === 403 && (data.expirado || data.inativo)) {
+        setBloqueio(data.error ?? "O teu acesso está suspenso.");
+        setLimiteOk(false);
         return;
       }
       if (data.restantes !== undefined) {
@@ -504,7 +534,7 @@ export default function ChatPage() {
   const erroAtivo = erro && erro.id === ativoId ? erro.msg : "";
   const podeTentarDeNovo = erroAtivo && ultima && ultima.role === "user" && perfil && restantes !== 0;
   const semTrocas = restantes === 0;
-  const bloqueado = semTrocas || !limiteOk;
+  const bloqueado = semTrocas || !limiteOk || bloqueio !== "";
   const aPensar = carregandoId !== null && carregandoId === ativoId;
   const mostrarFormulario = !chat || mostrarForm;
 
@@ -581,6 +611,18 @@ export default function ChatPage() {
                 ))}
               </nav>
               <div className="sidebar-foot">
+                {assinatura?.plano && (
+                  <p className={`plano-info${assinatura.diasRestantes !== null && assinatura.diasRestantes <= 3 ? " alerta" : ""}`}>
+                    Plano {assinatura.plano}
+                    {assinatura.validoAte ? ` · até ${formatarData(assinatura.validoAte)}` : ""}
+                    {assinatura.diasRestantes !== null && assinatura.diasRestantes <= 3
+                      ? ` (termina ${assinatura.diasRestantes <= 1 ? "hoje" : `em ${assinatura.diasRestantes} dias`})`
+                      : ""}
+                  </p>
+                )}
+                <Link href="/pagar" className="sidebar-link">
+                  Planos e pagamento
+                </Link>
                 <InstalarApp />
                 <button className="btn btn-ghost" onClick={sair}>
                   Sair
@@ -591,6 +633,14 @@ export default function ChatPage() {
         )}
 
         <div className="chat-col">
+          {codigo && bloqueio && (
+            <div className="aviso erro aviso-topo" role="alert">
+              {bloqueio}{" "}
+              <Link href="/pagar" className="btn btn-ghost">
+                Ver planos e pagar
+              </Link>
+            </div>
+          )}
           {!codigo ? (
             <div className="chat-body">
               <form className="onboarding" onSubmit={entrar}>
@@ -715,7 +765,7 @@ export default function ChatPage() {
                   </select>
                 </div>
                 <div className="form-actions">
-                  <button className="btn" type="submit" disabled={carregandoId !== null}>
+                  <button className="btn" type="submit" disabled={carregandoId !== null || bloqueio !== ""}>
                     Começar
                   </button>
                   {chat && (
@@ -761,7 +811,7 @@ export default function ChatPage() {
                     {ateMeiaNoiteLuanda()}.
                   </div>
                 )}
-                {!limiteOk && !semTrocas && (
+                {!limiteOk && !semTrocas && !bloqueio && (
                   <div className="aviso erro" role="alert">
                     {erroLimite || "A verificar o teu limite de hoje…"}{" "}
                     {codigo && (

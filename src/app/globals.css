@@ -191,3 +191,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .instalar { margin-bottom: 8px; }
 .instalar .btn { width: 100%; }
 .ajuda { font-size: 13px; color: var(--text-muted); line-height: 1.45; margin: 8px 2px 0; }
+
+/* ---------- Página /pagar ---------- */
+.pagar { max-width: 760px; margin: 0 auto; padding: 24px 20px 60px; }
+.pagar h1 { font-size: 28px; margin: 8px 0 6px; }
+.pagar h2 { font-size: 20px; margin: 28px 0 10px; }
+.pagar .muted { color: var(--text-muted); font-size: 14.5px; }
+.planos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 18px; }
+.plano { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+.plano h2 { margin: 0 0 6px; font-size: 18px; }
+.plano .preco { font-size: 24px; font-weight: 700; }
+.plano p { margin: 10px 0 0; font-size: 14.5px; }
+.passos-pagar { padding-left: 20px; line-height: 1.7; margin-bottom: 18px; }
+
+/* ---------- Assinatura no chat e no admin ---------- */
+.plano-info { font-size: 13px; color: var(--text-muted); margin: 0 2px 8px; line-height: 1.45; }
+.plano-info.alerta { color: #8a3b3b; }
+.sidebar-link { display: block; text-align: center; font-size: 13.5px; color: var(--steel); margin-bottom: 8px; }
+.admin-sec { margin-top: 34px; }
+.admin-sec h2 { font-size: 20px; margin-bottom: 10px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.form-grid input, .form-grid select { width: 100%; }
+.msg-pronta { width: 100%; min-height: 150px; margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; background: var(--panel); }
+.estado { font-size: 12.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); white-space: nowrap; }
+.estado.expirado, .estado.desativado { background: #f3dede; color: #8a3b3b; }
+.estado.ativo { background: #dfeee3; color: #2d6a3d; }
+.acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+.acoes .btn { padding: 4px 10px; font-size: 13px; }
+.aviso-topo { width: calc(100% - 32px); margin: 12px auto 0; max-width: 760px; }
