@@ -246,7 +246,10 @@ export default function AdminPage() {
                     <tbody>
                       {assin.acessos.map((a) => (
                         <tr key={a.codigo}>
-                          <td>{a.nome}</td>
+                          <td>
+                            {a.nome}
+                            {a.contacto ? <div className="muted" style={{ fontSize: 12.5 }}>{a.contacto}</div> : null}
+                          </td>
                           <td>{a.codigo}</td>
                           <td>{assin.planos.find((p) => p.id === a.plano)?.nome ?? a.plano}</td>
                           <td>{a.valido_ate ? formatarData(a.valido_ate) : "—"}</td>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { haCodigosConfigurados, hojeEmLuanda, normalizarCodigo } from "../../../lib/acesso";
 import { temSupabase } from "../../../lib/acessos";
 import { resolverAcesso } from "../../../lib/assinatura";
+import { primeiroNome } from "../../../lib/contacto";
 import { formatarData } from "../../../lib/planos";
 import { erroDeArmazenamento, lerTrocasDoDia } from "../../../lib/uso";
 
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
       plano: r.plano ?? null,
       validoAte: r.validoAte ?? null,
       diasRestantes: r.diasRestantes ?? null,
+      nome: primeiroNome(r.nome) || null,
     });
   } catch {
     return NextResponse.json({ error: "Não consegui verificar o limite de uso." }, { status: 500 });

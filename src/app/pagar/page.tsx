@@ -31,6 +31,12 @@ export default function PagarPage() {
         ))}
       </div>
 
+      <p>
+        <Link className="btn btn-ghost" href="/teste">
+          Experimentar 7 dias grátis
+        </Link>
+      </p>
+
       <h2>Como pagar</h2>
       <ol className="passos-pagar">
         <li>Escolhe o plano que queres.</li>

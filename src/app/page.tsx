@@ -28,7 +28,10 @@ export default function Home() {
         <div className="container">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/cold-logo-emblem.png" alt="Cold" />
-          <Link href="/app" className="btn">Começar agora</Link>
+          <nav className="nav-links">
+            <Link href="/pagar" className="nav-link">Assinaturas</Link>
+            <Link href="/app" className="btn">Começar agora</Link>
+          </nav>
         </div>
       </header>
 
@@ -42,8 +45,14 @@ export default function Home() {
             Nada de cursos fixos nem respostas genéricas. O Cold constrói um plano de estudo
             único para ti, e ajusta-o à medida que avanças.
           </p>
-          <Link href="/app" className="btn">Começar agora</Link>
-          <p className="note">Acesso por convite durante o piloto.</p>
+          <div className="hero-acoes">
+            <Link href="/app" className="btn">Começar agora</Link>
+            <Link href="/teste" className="btn btn-ghost">Experimentar grátis</Link>
+          </div>
+          <p className="note">
+            Tens código? Entra em «Começar agora». Sem código? <Link href="/teste">Experimenta 7 dias grátis</Link> ou vê as{" "}
+            <Link href="/pagar">assinaturas</Link>.
+          </p>
         </section>
 
         <section className="section">
@@ -101,7 +110,10 @@ export default function Home() {
         <section className="section cta-final">
           <div className="container">
             <h2>Pronto para começar?</h2>
-            <Link href="/app" className="btn">Começar agora</Link>
+            <div className="hero-acoes">
+              <Link href="/app" className="btn">Começar agora</Link>
+              <Link href="/pagar" className="btn btn-ghost">Ver assinaturas</Link>
+            </div>
           </div>
         </section>
       </main>

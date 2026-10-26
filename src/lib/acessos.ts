@@ -1,4 +1,5 @@
 // Assinaturas guardadas na Supabase (tabelas "acessos" e "pagamentos"; ver supabase.sql).
+import { randomInt } from "crypto";
 import { cabecalhos, supabase } from "./uso";
 
 export type Acesso = {
@@ -97,4 +98,34 @@ export async function listarPagamentos(): Promise<Pagamento[]> {
   });
   if (!r.ok) throw new Error("Erro a listar os pagamentos na Supabase.");
   return (await r.json()) as Pagamento[];
+}
+
+const ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sem 0/O, 1/I/L (evita erros ao copiar)
+
+export function gerarCodigo(): string {
+  let c = "COLD-";
+  for (let i = 0; i < 5; i++) c += ALFABETO[randomInt(ALFABETO.length)];
+  return c;
+}
+
+// Quantos testes grátis automáticos (feitos pelas próprias pessoas) foram criados hoje (hora de Luanda).
+export async function contarTestesAutoHoje(hoje: string): Promise<number> {
+  const sb = cfg();
+  const desde = encodeURIComponent(`${hoje}T00:00:00+01:00`);
+  const r = await fetch(
+    `${sb.url}/rest/v1/acessos?plano=eq.teste&notas=eq.auto-teste&criado_em=gte.${desde}&select=codigo`,
+    { headers: cabecalhos(sb.key), cache: "no-store" }
+  );
+  if (!r.ok) throw new Error("Erro a contar os testes na Supabase.");
+  return ((await r.json()) as unknown[]).length;
+}
+
+export async function existeContacto(contacto: string): Promise<boolean> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/acessos?contacto=eq.${enc(contacto)}&select=codigo&limit=1`, {
+    headers: cabecalhos(sb.key),
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error("Erro a verificar o contacto na Supabase.");
+  return ((await r.json()) as unknown[]).length > 0;
 }

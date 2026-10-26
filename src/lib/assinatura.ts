@@ -14,6 +14,7 @@ export type Resolucao =
       plano?: string;
       validoAte?: string;
       diasRestantes?: number;
+      nome?: string;
     }
   | { ok: false; motivo: "invalido" }
   | { ok: false; motivo: "inativo" }
@@ -57,6 +58,7 @@ export async function resolverAcesso(codigoBruto: unknown): Promise<Resolucao> {
         plano: plano?.nome ?? a.plano,
         validoAte: a.valido_ate ?? undefined,
         diasRestantes: a.valido_ate ? diasEntre(hoje, a.valido_ate) + 1 : undefined,
+        nome: a.nome || undefined,
       };
     }
   }

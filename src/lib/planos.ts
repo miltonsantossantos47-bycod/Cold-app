@@ -46,7 +46,7 @@ export const PLANOS: Plano[] = [
     id: "intensivo",
     nome: "Intensivo",
     trocasPorDia: 20,
-    precoKz: 19900,
+    precoKz: 12500,
     dias: 30,
     publico: false,
     descricao: "20 trocas por dia, durante 30 dias.",

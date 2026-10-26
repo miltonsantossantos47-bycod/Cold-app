@@ -210,6 +210,7 @@ export default function ChatPage() {
   const [limiteOk, setLimiteOk] = useState(false);
   // bloqueio = assinatura terminada ou código desativado (o código fica guardado; ao renovar, volta a funcionar)
   const [bloqueio, setBloqueio] = useState("");
+  const [nomeAluno, setNomeAluno] = useState("");
   const [assinatura, setAssinatura] = useState<{ plano: string | null; validoAte: string | null; diasRestantes: number | null } | null>(null);
   const [erroLimite, setErroLimite] = useState("");
 
@@ -242,6 +243,7 @@ export default function ChatPage() {
       setRestantes(d.restantes ?? null);
       setLimite(d.limite ?? null);
       setAssinatura(d.plano ? { plano: d.plano, validoAte: d.validoAte ?? null, diasRestantes: d.diasRestantes ?? null } : null);
+      setNomeAluno(typeof d.nome === "string" ? d.nome : "");
       setBloqueio("");
       setLimiteOk(true);
       setErroLimite("");
@@ -357,6 +359,7 @@ export default function ChatPage() {
       setRestantes(d.restantes ?? null);
       setLimite(d.limite ?? null);
       setAssinatura(d.plano ? { plano: d.plano, validoAte: d.validoAte ?? null, diasRestantes: d.diasRestantes ?? null } : null);
+      setNomeAluno(typeof d.nome === "string" ? d.nome : "");
       setBloqueio("");
       setLimiteOk(true);
       setErroLimite("");
@@ -374,6 +377,7 @@ export default function ChatPage() {
     setRestantes(null);
     setLimite(null);
     setAssinatura(null);
+    setNomeAluno("");
     setBloqueio("");
     setMenuAberto(false);
   }
@@ -661,12 +665,16 @@ export default function ChatPage() {
                 <button className="btn" type="submit" disabled={aVerificar}>
                   {aVerificar ? "A verificar…" : "Entrar"}
                 </button>
+                <p className="gate-links">
+                  Ainda não tens código? <Link href="/teste">Experimenta 7 dias grátis</Link> ou vê as{" "}
+                  <Link href="/pagar">assinaturas</Link>.
+                </p>
               </form>
             </div>
           ) : mostrarFormulario ? (
             <div className="chat-body">
               <form className="onboarding" onSubmit={comecar}>
-                <h1>{chats.length === 0 ? "Vamos conhecer-te" : "Novo chat"}</h1>
+                <h1>{chats.length === 0 ? (nomeAluno ? `Vamos conhecer-te, ${nomeAluno}` : "Vamos conhecer-te") : "Novo chat"}</h1>
                 <p>
                   {chats.length === 0
                     ? "Três respostas rápidas para o Cold ajustar o ensino a ti."
@@ -789,7 +797,16 @@ export default function ChatPage() {
                         </div>
                       </div>
                     ))}
-                  {aPensar && <div className="thinking">O Cold está a pensar…</div>}
+                  {aPensar && (
+                    <div className="thinking" role="status" aria-live="polite">
+                      <span className="dots" aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <span className="pensar-texto">O Cold está a pensar…</span>
+                    </div>
+                  )}
                   {erroAtivo && (
                     <div className="error">
                       <span>{erroAtivo}</span>

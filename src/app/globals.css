@@ -84,7 +84,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   overflow-x: auto; font-size: 13.5px; line-height: 1.45; white-space: pre;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-.thinking { color: var(--text-muted); font-size: 14px; padding-left: 4px; }
+.thinking { color: var(--text-muted); font-size: 14px; padding-left: 4px; display: flex; align-items: center; gap: 10px; }
 .error {
   background: #fdecec; border: 1px solid #f3b8b8; color: #7a1f1f; border-radius: 10px;
   padding: 12px 14px; font-size: 14px; display: flex; gap: 12px; align-items: center; justify-content: space-between;
@@ -219,3 +219,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .acoes { display: flex; gap: 6px; flex-wrap: wrap; }
 .acoes .btn { padding: 4px 10px; font-size: 13px; }
 .aviso-topo { width: calc(100% - 32px); margin: 12px auto 0; max-width: 760px; }
+
+/* ---------- Navegação da página inicial ---------- */
+.nav-links { display: flex; align-items: center; gap: 18px; }
+.nav-link { color: var(--text); font-weight: 500; font-size: 15px; }
+.nav-link:hover { color: var(--steel); }
+.hero-acoes { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.hero .note a, .gate-links a, .cta-final a { text-decoration: underline; }
+.gate-links { margin-top: 16px; font-size: 14px; color: var(--text-muted); }
+.codigo-grande { font-size: 28px; font-weight: 700; letter-spacing: .06em; margin: 6px 0 18px; word-break: break-all; }
+.armadilha { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---------- "O Cold está a pensar…" animado ---------- */
+.dots { display: inline-flex; gap: 5px; align-items: center; }
+.dots i {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--steel);
+  animation: cold-salto 1.2s infinite ease-in-out both;
+}
+.dots i:nth-child(2) { animation-delay: .16s; }
+.dots i:nth-child(3) { animation-delay: .32s; }
+.pensar-texto { animation: cold-brilho 2s infinite ease-in-out; }
+@keyframes cold-salto { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-6px); opacity: 1; } }
+@keyframes cold-brilho { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .dots i, .pensar-texto { animation: none; opacity: .8; }
+}

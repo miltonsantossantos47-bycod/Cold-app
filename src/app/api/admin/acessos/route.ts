@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { randomInt } from "crypto";
 import { diasEntre, hojeEmLuanda, normalizarCodigo, somarDias, tipoDoCodigo } from "../../../../lib/acesso";
 import {
   atualizarAcesso,
   criarAcesso,
+  gerarCodigo,
   listarAcessos,
   listarPagamentos,
   obterAcesso,
@@ -14,14 +14,6 @@ import {
 import { PLANOS, planoPorId } from "../../../../lib/planos";
 
 export const dynamic = "force-dynamic";
-
-const ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sem 0/O, 1/I/L (evita erros ao copiar)
-
-function gerarCodigo(): string {
-  let c = "COLD-";
-  for (let i = 0; i < 5; i++) c += ALFABETO[randomInt(ALFABETO.length)];
-  return c;
-}
 
 function autorizado(req: Request): boolean {
   return tipoDoCodigo(req.headers.get("x-codigo")) === "ilimitado";
