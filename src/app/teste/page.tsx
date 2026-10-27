@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { CONTAS_ATIVAS, entrarComGoogle } from "../../lib/auth-cliente";
 
 export default function TestePage() {
   const [estado, setEstado] = useState<"a-ver" | "aberto" | "fechado">("a-ver");
@@ -89,6 +90,30 @@ export default function TestePage() {
               </>
             ) : null}
             .
+          </p>
+        </div>
+      ) : CONTAS_ATIVAS ? (
+        <div className="onboarding" style={{ marginTop: 16 }}>
+          <h1>Experimenta grátis durante 7 dias</h1>
+          <p>Entra com o teu Google e o teste começa na hora. Sem pagar nada, e as tuas conversas ficam guardadas na tua conta.</p>
+          {erro && <div className="error" style={{ marginBottom: 16 }}>{erro}</div>}
+          <button
+            className="btn btn-google"
+            type="button"
+            onClick={async () => {
+              setErro("");
+              try {
+                localStorage.setItem("cold:acao", JSON.stringify("teste"));
+                await entrarComGoogle();
+              } catch {
+                setErro("Não consegui abrir o Google. Abre este link no Chrome ou no Safari e tenta de novo.");
+              }
+            }}
+          >
+            Continuar com Google
+          </button>
+          <p className="muted" style={{ marginTop: 14 }}>
+            Um teste por conta. Se abriste este link dentro do WhatsApp ou do Instagram, abre-o no Chrome ou no Safari.
           </p>
         </div>
       ) : (

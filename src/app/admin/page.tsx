@@ -6,11 +6,12 @@ import { formatarData, formatarKz } from "../../lib/planos";
 
 type Linha = { codigo: string; dia: string; trocas: number; tokens_in: number; tokens_out: number };
 type Precos = { entrada_usd_por_milhao: number; saida_usd_por_milhao: number };
-type PlanoInfo = { id: string; nome: string; trocasPorDia: number; precoKz: number; dias: number; publico: boolean };
+type PlanoInfo = { id: string; nome: string; trocasPorDia: number; precoKz: number; dias: number; publico: boolean; criavel?: boolean };
 type AcessoInfo = {
   codigo: string;
   nome: string;
   contacto: string;
+  user_id?: string | null;
   plano: string;
   valido_ate: string | null;
   ativo: boolean;
@@ -199,7 +200,7 @@ export default function AdminPage() {
                   <input required placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={80} aria-label="Nome" />
                   <input placeholder="Contacto (WhatsApp)" value={contacto} onChange={(e) => setContacto(e.target.value)} maxLength={40} aria-label="Contacto" />
                   <select value={planoId} onChange={(e) => setPlanoId(e.target.value)} aria-label="Plano">
-                    {assin.planos.map((p) => (
+                    {assin.planos.filter((p) => p.criavel !== false).map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.nome} · {p.trocasPorDia}/dia · {p.precoKz === 0 ? "grátis" : formatarKz(p.precoKz)}
                       </option>
@@ -250,7 +251,10 @@ export default function AdminPage() {
                             {a.nome}
                             {a.contacto ? <div className="muted" style={{ fontSize: 12.5 }}>{a.contacto}</div> : null}
                           </td>
-                          <td>{a.codigo}</td>
+                          <td>
+                            {a.codigo}
+                            {a.user_id ? <div className="muted" style={{ fontSize: 12.5 }}>ligado a conta Google</div> : null}
+                          </td>
                           <td>{assin.planos.find((p) => p.id === a.plano)?.nome ?? a.plano}</td>
                           <td>{a.valido_ate ? formatarData(a.valido_ate) : "—"}</td>
                           <td>

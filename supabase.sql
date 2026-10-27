@@ -51,3 +51,22 @@ create table if not exists pagamentos (
   criado_em timestamptz not null default now()
 );
 alter table pagamentos enable row level security;
+
+-- ---------- Contas com Google: historial de chats e ligação código <-> conta ----------
+alter table acessos add column if not exists user_id uuid;
+create index if not exists acessos_user on acessos (user_id);
+
+create table if not exists chats (
+  user_id         uuid    not null,
+  id              text    not null,
+  titulo          text    not null default '',
+  titulo_definido boolean not null default false,
+  perfil          jsonb   not null default '{}',
+  msgs            jsonb   not null default '[]',
+  criado          bigint  not null default 0,
+  atualizado      bigint  not null default 0,
+  apagado         boolean not null default false,
+  primary key (user_id, id)
+);
+create index if not exists chats_user on chats (user_id, atualizado desc);
+alter table chats enable row level security;

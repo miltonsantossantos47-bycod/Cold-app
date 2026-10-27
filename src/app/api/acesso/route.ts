@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { haCodigosConfigurados, hojeEmLuanda, normalizarCodigo } from "../../../lib/acesso";
+import { haCodigosConfigurados, hojeEmLuanda } from "../../../lib/acesso";
 import { temSupabase } from "../../../lib/acessos";
-import { resolverAcesso } from "../../../lib/assinatura";
+import { resolverPedido } from "../../../lib/assinatura";
 import { primeiroNome } from "../../../lib/contacto";
-import { formatarData } from "../../../lib/planos";
+import { respostaDeBloqueio, sessaoInvalida } from "../../../lib/respostas";
+import { estadoTestes } from "../../../lib/testes";
 import { erroDeArmazenamento, lerTrocasDoDia } from "../../../lib/uso";
 
 export async function POST(req: Request) {
@@ -16,32 +17,27 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => null)) as { codigo?: unknown } | null;
 
-  let r;
+  let p;
   try {
-    r = await resolverAcesso(body?.codigo);
+    p = await resolverPedido(req, body?.codigo);
   } catch {
     return NextResponse.json({ error: "Não consegui verificar o teu acesso." }, { status: 500 });
   }
+  if (p.tipo === "sessao-invalida") return sessaoInvalida();
 
+  const r = p.resolucao;
   if (!r.ok) {
-    if (r.motivo === "invalido") {
-      await new Promise((res) => setTimeout(res, 600)); // trava tentativas rápidas de adivinhar
-      return NextResponse.json({ error: "Código inválido." }, { status: 401 });
+    if (r.motivo === "sem-plano") {
+      let testeAberto = false;
+      try {
+        testeAberto = (await estadoTestes()).aberto;
+      } catch {
+        /* sem teste disponível */
+      }
+      return NextResponse.json({ ok: true, semPlano: true, testeAberto });
     }
-    if (r.motivo === "inativo") {
-      return NextResponse.json(
-        { error: "Este código foi desativado. Fala com quem te deu o código.", inativo: true },
-        { status: 403 }
-      );
-    }
-    return NextResponse.json(
-      {
-        error: `A tua assinatura ${r.plano} terminou em ${formatarData(r.validoAte)}. Renova para continuares a estudar.`,
-        expirado: true,
-        validoAte: r.validoAte,
-      },
-      { status: 403 }
-    );
+    if (r.motivo === "invalido") await new Promise((res) => setTimeout(res, 600)); // trava tentativas rápidas de adivinhar
+    return respostaDeBloqueio(r);
   }
 
   if (r.tipo === "ilimitado") {
@@ -52,7 +48,7 @@ export async function POST(req: Request) {
   if (erroArm) return NextResponse.json({ error: erroArm }, { status: 500 });
 
   try {
-    const usadas = await lerTrocasDoDia(normalizarCodigo(body?.codigo), hojeEmLuanda());
+    const usadas = await lerTrocasDoDia(r.codigo, hojeEmLuanda());
     return NextResponse.json({
       ok: true,
       tipo: "normal",

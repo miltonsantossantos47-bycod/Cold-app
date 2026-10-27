@@ -78,7 +78,7 @@ export async function POST(req: Request) {
   try {
     if (b.acao === "criar") {
       const plano = planoPorId(b.plano);
-      if (!plano) return NextResponse.json({ error: "Plano inválido." }, { status: 400 });
+      if (!plano || plano.criavel === false) return NextResponse.json({ error: "Plano inválido." }, { status: 400 });
       const nome = texto(b.nome, 80);
       if (!nome) return NextResponse.json({ error: "Indica o nome da pessoa." }, { status: 400 });
       const dias = b.dias === undefined || b.dias === "" ? plano.dias : inteiro(b.dias, 1, 366);

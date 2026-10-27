@@ -1,5 +1,5 @@
 // Planos do Cold: pacotes de trocas por dia. Muda os preços aqui (valores em kwanzas).
-export type PlanoId = "teste" | "basico" | "estudante" | "intensivo";
+export type PlanoId = "teste" | "basico" | "estudante" | "intensivo" | "piloto";
 
 export type Plano = {
   id: PlanoId;
@@ -9,6 +9,7 @@ export type Plano = {
   precoKz: number;
   dias: number;
   publico: boolean; // aparece na página /pagar
+  criavel?: boolean; // false = não aparece no painel para criar (plano interno)
   descricao: string;
 };
 
@@ -50,6 +51,17 @@ export const PLANOS: Plano[] = [
     dias: 30,
     publico: false,
     descricao: "20 trocas por dia, durante 30 dias.",
+  },
+  {
+    // Códigos do piloto ligados a uma conta: sem validade; o limite diário vem do próprio código.
+    id: "piloto",
+    nome: "Piloto",
+    trocasPorDia: 10,
+    precoKz: 0,
+    dias: 0,
+    publico: false,
+    criavel: false,
+    descricao: "Acesso do piloto.",
   },
 ];
 

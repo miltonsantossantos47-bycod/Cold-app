@@ -1,25 +1,13 @@
 import { NextResponse } from "next/server";
-import { hojeEmLuanda, tipoDoCodigo } from "../../../lib/acesso";
-import { contarTestesAutoHoje, criarAcesso, existeContacto, gerarCodigo, temSupabase } from "../../../lib/acessos";
+import { tipoDoCodigo } from "../../../lib/acesso";
+import { criarAcesso, existeContacto, gerarCodigo } from "../../../lib/acessos";
 import { normalizarTelefone, primeiroNome } from "../../../lib/contacto";
+import { estadoTestes as estado } from "../../../lib/testes";
 
 export const dynamic = "force-dynamic";
 
-// Quantos testes grátis automáticos se aceitam por dia. 0 (ou sem variável) = fechado.
-function limiteDiarioDeTestes(): number {
-  const n = parseInt(process.env.TESTES_LIVRES_POR_DIA ?? "", 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
 function whatsapp(): string {
   return (process.env.WHATSAPP_NUMERO ?? "").replace(/\D/g, "");
-}
-
-async function estado(): Promise<{ aberto: boolean; motivo?: "fechado" | "esgotado" }> {
-  const limite = limiteDiarioDeTestes();
-  if (limite === 0 || !temSupabase()) return { aberto: false, motivo: "fechado" };
-  const hoje = await contarTestesAutoHoje(hojeEmLuanda());
-  return hoje >= limite ? { aberto: false, motivo: "esgotado" } : { aberto: true };
 }
 
 export async function GET() {

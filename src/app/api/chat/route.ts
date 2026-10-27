@@ -3,8 +3,9 @@ import { SYSTEM_PROMPT } from "../../../lib/system-prompt";
 import { curriculoParaPrompt } from "../../../lib/curriculo";
 import { haCodigosConfigurados, hojeEmLuanda, normalizarCodigo } from "../../../lib/acesso";
 import { temSupabase } from "../../../lib/acessos";
-import { resolverAcesso } from "../../../lib/assinatura";
-import { formatarData } from "../../../lib/planos";
+import { resolverPedido } from "../../../lib/assinatura";
+import { primeiroNome } from "../../../lib/contacto";
+import { respostaDeBloqueio, sessaoInvalida } from "../../../lib/respostas";
 import { erroDeArmazenamento, lerTrocasDoDia, registarTroca } from "../../../lib/uso";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -17,6 +18,7 @@ type Perfil = {
   modulo_atual?: string;
   licao_atual?: string;
   dificuldades_recentes?: string;
+  nome?: string; // vem sempre do servidor (nunca do navegador)
 };
 
 // Tempo máximo (segundos) que o Vercel deixa uma resposta demorar.
@@ -29,7 +31,8 @@ const NOTA_FORMATO = `
 ## Formato de escrita (o ecrã mostra só texto simples)
 - Não uses LaTeX nem $...$. Escreve fórmulas em texto simples (ex.: v = Δx / Δt, x^2).
 - Podes usar **negrito**, listas com "-" e blocos de código (três crases) para diagramas ASCII e tabelas.
-- Na linha [[ESTADO: ...]] usa os ids do currículo (ex.: mat-2-1). Se ainda não escolheste lição, usa a mais adequada ao diagnóstico.`;
+- Na linha [[ESTADO: ...]] usa os ids do currículo (ex.: mat-2-1). Se ainda não escolheste lição, usa a mais adequada ao diagnóstico.
+- Se o perfil tiver um nome, trata o aluno por esse nome de vez em quando (por exemplo ao cumprimentar ou ao reconhecer um acerto), com naturalidade e sem exagerar.`;
 
 function limparMensagens(raw: unknown): Msg[] {
   if (!Array.isArray(raw)) return [];
@@ -53,6 +56,7 @@ function limparMensagens(raw: unknown): Msg[] {
 
 function perfilEmTexto(p: Perfil): string {
   return [
+    `- nome: ${p.nome || "não indicado"}`,
     `- área: ${p.area || "não indicada"}`,
     `- nível_atual: ${p.nivel_atual || "não indicado"}`,
     `- objetivo: ${p.objetivo || "não indicado"}`,
@@ -101,34 +105,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
   }
 
-  // 1) Quem é? Sem código válido não gasta um cêntimo.
-  let acesso;
+  // 1) Quem é? Sem acesso válido não gasta um cêntimo.
+  let pedido;
   try {
-    acesso = await resolverAcesso(body.codigo);
+    pedido = await resolverPedido(req, body.codigo);
   } catch {
     return NextResponse.json({ error: "Não consegui verificar o teu acesso." }, { status: 500 });
   }
-  if (!acesso.ok) {
-    if (acesso.motivo === "invalido") {
-      return NextResponse.json({ error: "Código de acesso inválido.", codigoInvalido: true }, { status: 401 });
-    }
-    if (acesso.motivo === "inativo") {
-      return NextResponse.json(
-        { error: "Este código foi desativado. Fala com quem te deu o código.", inativo: true },
-        { status: 403 }
-      );
-    }
-    return NextResponse.json(
-      {
-        error: `A tua assinatura ${acesso.plano} terminou em ${formatarData(acesso.validoAte)}. Renova para continuares a estudar.`,
-        expirado: true,
-        validoAte: acesso.validoAte,
-      },
-      { status: 403 }
-    );
-  }
+  if (pedido.tipo === "sessao-invalida") return sessaoInvalida();
+  const acesso = pedido.resolucao;
+  if (!acesso.ok) return respostaDeBloqueio(acesso);
   const tipo = acesso.tipo;
-  const codigo = normalizarCodigo(body.codigo);
+  const codigo = acesso.tipo === "normal" ? acesso.codigo : normalizarCodigo(body.codigo); // o ilimitado também regista o seu uso
 
   const messages = limparMensagens(body.messages);
   if (messages.length === 0) {
@@ -165,7 +153,11 @@ export async function POST(req: Request) {
   }
 
   // 3) Chama o modelo.
-  const perfil: Perfil = body.perfil ?? {};
+  // O nome vem do servidor (da assinatura/conta); ignora qualquer "nome" que o navegador mande.
+  const perfil: Perfil = {
+    ...(body.perfil ?? {}),
+    nome: primeiroNome(acesso.tipo === "normal" ? acesso.nome : "") || undefined,
+  };
   const system =
     SYSTEM_PROMPT.replace("{{PERFIL_DO_ALUNO}}", () => perfilEmTexto(perfil)).replace(
       "{{CURRICULO}}",

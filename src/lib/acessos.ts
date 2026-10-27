@@ -12,6 +12,7 @@ export type Acesso = {
   valido_ate: string | null;
   ativo: boolean;
   notas: string;
+  user_id?: string | null; // conta Google a que o código está ligado
   criado_em?: string;
 };
 
@@ -127,5 +128,27 @@ export async function existeContacto(contacto: string): Promise<boolean> {
     cache: "no-store",
   });
   if (!r.ok) throw new Error("Erro a verificar o contacto na Supabase.");
+  return ((await r.json()) as unknown[]).length > 0;
+}
+
+export async function listarAcessosDoUsuario(userId: string): Promise<Acesso[]> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/acessos?user_id=eq.${enc(userId)}&select=*&order=criado_em.desc`, {
+    headers: cabecalhos(sb.key),
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error("Erro a ler os acessos da conta na Supabase (já correste o supabase.sql?).");
+  return (await r.json()) as Acesso[];
+}
+
+// Liga o código à conta só se ainda estiver livre (evita que duas contas fiquem com o mesmo código).
+export async function vincularSeLivre(codigo: string, userId: string, patch: Partial<Acesso>): Promise<boolean> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/acessos?codigo=eq.${enc(codigo)}&user_id=is.null`, {
+    method: "PATCH",
+    headers: { ...cabecalhos(sb.key), Prefer: "return=representation" },
+    body: JSON.stringify({ ...patch, user_id: userId }),
+  });
+  if (!r.ok) throw new Error("Erro a ligar o código à conta na Supabase.");
   return ((await r.json()) as unknown[]).length > 0;
 }

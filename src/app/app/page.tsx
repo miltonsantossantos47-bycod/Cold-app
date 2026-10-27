@@ -4,6 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CURRICULO } from "../../lib/curriculo";
 import { formatarData } from "../../lib/planos";
+import {
+  CONTAS_ATIVAS,
+  contaDaSessao,
+  entrarComGoogle,
+  sairDaConta,
+  sessaoAtual,
+  supabaseCliente,
+  tokenAtual,
+  type Conta,
+} from "../../lib/auth-cliente";
+import { assinaturaChat, decidirSync } from "../../lib/sync-chats";
 import InstalarApp from "./instalar";
 
 type Msg = { role: "user" | "assistant"; content: string; hidden?: boolean };
@@ -111,6 +122,39 @@ function grupoDe(ts: number): string {
   return "Mais antigos";
 }
 
+// Quem faz o pedido: a conta Google (token) ou um código.
+type Quem = { tipo: "conta" } | { tipo: "codigo"; codigo: string };
+
+async function chamar(url: string, quem: Quem, corpo: Record<string, unknown> = {}): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const body: Record<string, unknown> = { ...corpo };
+  if (quem.tipo === "conta") {
+    const t = await tokenAtual();
+    if (!t) throw new Error("sem sessão");
+    headers.Authorization = `Bearer ${t}`;
+  } else {
+    body.codigo = quem.codigo;
+  }
+  return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+// /api/chats: sem corpo = GET; com corpo = POST (guardar/apagar). Precisa de sessão.
+async function apiChats(query: string, corpo?: unknown): Promise<Response> {
+  const t = await tokenAtual();
+  if (!t) throw new Error("sem sessão");
+  if (corpo === undefined) return fetch(`/api/chats${query}`, { headers: { Authorization: `Bearer ${t}` } });
+  const texto = JSON.stringify(corpo);
+  return fetch(`/api/chats${query}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+    body: texto,
+    keepalive: texto.length < 60000, // deixa terminar o envio mesmo se a página fechar
+  });
+}
+
+const apagarKey = (k: string) => `cold:apagar:${k}`;
+const primeiroNomeLocal = (n: string | undefined | null) => (n ?? "").trim().split(/\s+/)[0] ?? "";
+
 function lerStorage<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
@@ -214,32 +258,87 @@ export default function ChatPage() {
   const [assinatura, setAssinatura] = useState<{ plano: string | null; validoAte: string | null; diasRestantes: number | null } | null>(null);
   const [erroLimite, setErroLimite] = useState("");
 
+  // conta Google (opcional): guarda os chats na Supabase para os veres em qualquer aparelho
+  const [conta, setConta] = useState<Conta | null>(null);
+  const [semPlano, setSemPlano] = useState<{ testeAberto: boolean } | null>(null);
+  const [sincronizadoPara, setSincronizadoPara] = useState<string | null>(null);
+  const [erroSync, setErroSync] = useState("");
+  const [erroSemPlano, setErroSemPlano] = useState("");
+  const [codigoSemPlano, setCodigoSemPlano] = useState("");
+  const [aAtivar, setAAtivar] = useState(false);
+  const enviadas = useRef(new Map<string, string>()); // assinatura do que já está guardado na conta
+  const sincronizando = useRef(false);
+  const chatsRef = useRef<Chat[]>([]);
+  const contaRef = useRef<Conta | null>(null);
+  const sincRef = useRef<string | null>(null);
+  chatsRef.current = chats;
+  contaRef.current = conta;
+  sincRef.current = sincronizadoPara;
+  // "chave" = quem está dentro (conta ou código); é com ela que se guardam os chats neste aparelho
+  const chave = conta ? `u:${conta.userId}` : codigo;
+  const quemAtual = (): Quem | null => (conta ? { tipo: "conta" } : codigo ? { tipo: "codigo", codigo } : null);
+
   const chat = chats.find((c) => c.id === ativoId) ?? null;
   const perfil = chat?.perfil ?? null;
   const msgs = chat?.msgs ?? [];
 
+  function limparSessaoLocal() {
+    setConta(null);
+    setCodigo(null);
+    setRestantes(null);
+    setLimite(null);
+    setAssinatura(null);
+    setNomeAluno("");
+    setBloqueio("");
+    setSemPlano(null);
+    setLimiteOk(false);
+    setSincronizadoPara(null);
+    setErroSync("");
+    setMenuAberto(false);
+  }
+
   // Pergunta ao servidor quantas trocas restam hoje. Nunca "assume" que há trocas se a resposta falhar.
-  async function atualizarLimite(c: string) {
+  async function atualizarLimite(quem: Quem) {
     try {
-      const res = await fetch("/api/acesso", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codigo: c }),
-      });
+      const res = await chamar("/api/acesso", quem);
+      const d = await res.json().catch(() => null);
       if (res.status === 401) {
+        if (quem.tipo === "conta") {
+          limparSessaoLocal();
+          void sairDaConta().catch(() => {});
+          setErroCodigo("A tua sessão terminou. Entra outra vez.");
+        } else {
+          apagarStorage(CODIGO_KEY);
+          setCodigo(null);
+          setLimiteOk(false);
+        }
+        return;
+      }
+      if (res.status === 403 && d && d.ligado && quem.tipo === "codigo") {
+        // o código passou para uma conta: só se entra com o Google
         apagarStorage(CODIGO_KEY);
         setCodigo(null);
         setLimiteOk(false);
+        setErroCodigo(d.error ?? "Este código já está ligado a uma conta.");
         return;
       }
-      const d = await res.json().catch(() => null);
       if (res.status === 403 && d && (d.expirado || d.inativo)) {
+        setSemPlano(null);
         setBloqueio(d.error ?? "O teu acesso está suspenso.");
         setLimiteOk(false);
         setErroLimite("");
         return;
       }
+      if (res.ok && d && d.semPlano) {
+        setSemPlano({ testeAberto: Boolean(d.testeAberto) });
+        setBloqueio("");
+        setAssinatura(null);
+        setLimiteOk(false);
+        setErroLimite("");
+        return;
+      }
       if (!res.ok || !d) throw new Error("falhou");
+      setSemPlano(null);
       setRestantes(d.restantes ?? null);
       setLimite(d.limite ?? null);
       setAssinatura(d.plano ? { plano: d.plano, validoAte: d.validoAte ?? null, diasRestantes: d.diasRestantes ?? null } : null);
@@ -253,44 +352,76 @@ export default function ChatPage() {
     }
   }
 
-  // valida o código guardado ao abrir a página
+  // ao abrir a página: há sessão Google? senão, há um código guardado?
   useEffect(() => {
     (async () => {
-      const guardado = lerStorage<string>(CODIGO_KEY);
-      if (guardado) {
-        setCodigo(guardado);
-        await atualizarLimite(guardado);
+      let c: Conta | null = null;
+      if (CONTAS_ATIVAS) {
+        try {
+          c = contaDaSessao(await sessaoAtual());
+        } catch {
+          c = null;
+        }
+      }
+      if (c) {
+        setConta(c);
+        await atualizarLimite({ tipo: "conta" });
+      } else {
+        const guardado = lerStorage<string>(CODIGO_KEY);
+        if (guardado) {
+          setCodigo(guardado);
+          await atualizarLimite({ tipo: "codigo", codigo: guardado });
+        }
       }
       setPronto(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ao voltar à aba (ou depois da meia-noite), confirma o limite de novo
+  // se a sessão terminar noutro separador
   useEffect(() => {
-    if (!codigo) return;
+    const c = supabaseCliente();
+    if (!c) return;
+    const { data } = c.auth.onAuthStateChange((evento) => {
+      if (evento === "SIGNED_OUT") limparSessaoLocal();
+    });
+    return () => data.subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ao voltar à aba (ou depois da meia-noite), confirma o limite e sincroniza; ao sair da aba, guarda o que falta
+  useEffect(() => {
+    if (!chave) return;
     const f = () => {
-      if (document.visibilityState === "visible") atualizarLimite(codigo);
+      if (document.visibilityState === "visible") {
+        const q = quemAtual();
+        if (q) atualizarLimite(q);
+        if (contaRef.current) void sincronizar();
+      } else if (contaRef.current) {
+        void enviarPendentes();
+      }
     };
     document.addEventListener("visibilitychange", f);
     return () => document.removeEventListener("visibilitychange", f);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codigo]);
+  }, [chave]);
 
   // carrega os chats do código (e migra a conversa do formato antigo, se existir)
   useEffect(() => {
-    if (!codigo) {
+    enviadas.current.clear();
+    setSincronizadoPara(null);
+    if (!chave) {
       setChats([]);
       setAtivoId(null);
       setCarregadoPara(null);
       return;
     }
-    let lista = lerStorage<Chat[]>(chatsKey(codigo));
+    let lista = lerStorage<Chat[]>(chatsKey(chave));
     if (!lista) {
       lista = [];
       const pAntigo = lerStorage<Perfil>(PERFIL_KEY);
       const mAntigo = lerStorage<Msg[]>(MSGS_KEY);
-      if (pAntigo) {
+      if (pAntigo && !conta) {
         const agora = Date.now();
         const primeira = (mAntigo ?? []).find((m) => m.role === "user" && !m.hidden);
         lista.push({
@@ -306,22 +437,131 @@ export default function ChatPage() {
       apagarStorage(PERFIL_KEY);
       apagarStorage(MSGS_KEY);
     }
-    const guardadoAtivo = lerStorage<string>(ativoKey(codigo));
+    const guardadoAtivo = lerStorage<string>(ativoKey(chave));
     const maisRecente = [...lista].sort((a, b) => b.atualizado - a.atualizado)[0];
     const ativo = lista.find((c) => c.id === guardadoAtivo)?.id ?? maisRecente?.id ?? null;
     setChats(lista);
     setAtivoId(ativo);
     setMostrarForm(false);
     setErro(null);
-    setCarregadoPara(codigo);
-  }, [codigo]);
+    setCarregadoPara(chave);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave]);
 
   // guarda sempre que algo muda (só depois de carregar os chats do código certo)
   useEffect(() => {
-    if (!codigo || carregadoPara !== codigo) return;
-    gravarStorage(chatsKey(codigo), chats);
-    gravarStorage(ativoKey(codigo), ativoId);
-  }, [chats, ativoId, carregadoPara, codigo]);
+    if (!chave || carregadoPara !== chave) return;
+    gravarStorage(chatsKey(chave), chats);
+    gravarStorage(ativoKey(chave), ativoId);
+  }, [chats, ativoId, carregadoPara, chave]);
+
+  // se o chat ativo desaparecer (apagado noutro aparelho), passa para o mais recente
+  useEffect(() => {
+    if (ativoId && !chats.some((c) => c.id === ativoId)) {
+      setAtivoId([...chats].sort((a, b) => b.atualizado - a.atualizado)[0]?.id ?? null);
+    }
+  }, [chats, ativoId]);
+
+  // ---------- sincronização com a conta ----------
+  async function enviarApagados(k: string): Promise<void> {
+    const pend = lerStorage<{ id: string; atualizado: number }[]>(apagarKey(k)) ?? [];
+    const ficam: { id: string; atualizado: number }[] = [];
+    for (const p of pend) {
+      try {
+        const r = await apiChats("", { acao: "apagar", id: p.id, atualizado: p.atualizado });
+        if (!r.ok) ficam.push(p);
+      } catch {
+        ficam.push(p);
+      }
+    }
+    if (ficam.length) gravarStorage(apagarKey(k), ficam);
+    else apagarStorage(apagarKey(k));
+  }
+
+  async function sincronizar() {
+    const c = contaRef.current;
+    if (!c || sincronizando.current) return;
+    sincronizando.current = true;
+    const k = `u:${c.userId}`;
+    try {
+      await enviarApagados(k);
+      const r = await apiChats("");
+      if (r.status === 401) {
+        limparSessaoLocal();
+        setErroCodigo("A tua sessão terminou. Entra outra vez.");
+        return;
+      }
+      if (!r.ok) throw new Error("falhou");
+      const { chats: metas } = (await r.json()) as { chats: { id: string; titulo: string; atualizado: number; apagado: boolean }[] };
+      const dec = decidirSync(chatsRef.current, metas);
+      const baixados: Chat[] = [];
+      for (const id of dec.baixar) {
+        const rr = await apiChats(`?id=${encodeURIComponent(id)}`);
+        if (rr.ok) baixados.push(((await rr.json()) as { chat: Chat }).chat);
+      }
+      if (contaRef.current?.userId !== c.userId) return; // entretanto trocou de conta
+      for (const id of dec.remover) enviadas.current.delete(id);
+      for (const id of dec.iguais) {
+        const loc = chatsRef.current.find((x) => x.id === id);
+        if (loc) enviadas.current.set(id, assinaturaChat(loc));
+      }
+      for (const b of baixados) enviadas.current.set(b.id, assinaturaChat(b));
+      setChats((prev) => {
+        const mapa = new Map(prev.filter((x) => !dec.remover.includes(x.id)).map((x) => [x.id, x]));
+        for (const b of baixados) {
+          const atual = mapa.get(b.id);
+          if (!atual || b.atualizado >= atual.atualizado) mapa.set(b.id, b);
+        }
+        return Array.from(mapa.values());
+      });
+      setSincronizadoPara(k);
+      setErroSync("");
+    } catch {
+      setErroSync("Não consegui sincronizar agora. Tento de novo quando possível.");
+    } finally {
+      sincronizando.current = false;
+    }
+  }
+
+  async function enviarPendentes() {
+    const c = contaRef.current;
+    if (!c || sincRef.current !== `u:${c.userId}`) return;
+    let precisaSync = false;
+    for (const ch of chatsRef.current.filter((x) => enviadas.current.get(x.id) !== assinaturaChat(x))) {
+      const sig = assinaturaChat(ch);
+      try {
+        const r = await apiChats("", { acao: "guardar", chat: ch });
+        if (r.ok) {
+          enviadas.current.set(ch.id, sig);
+          const d = (await r.json()) as { resultado?: string };
+          if (d.resultado === "antigo" || d.resultado === "apagado") precisaSync = true;
+          setErroSync("");
+        } else {
+          const d = await r.json().catch(() => ({}));
+          if (r.status === 400 || r.status === 409) enviadas.current.set(ch.id, sig); // não insistir
+          setErroSync((d as { error?: string }).error ?? "Não consegui guardar um chat na conta.");
+        }
+      } catch {
+        setErroSync("Sem ligação: guardo as conversas na conta mais tarde.");
+      }
+    }
+    if (precisaSync) void sincronizar();
+  }
+
+  // depois de carregar os chats deste aparelho, junta com os da conta
+  useEffect(() => {
+    if (conta && carregadoPara === `u:${conta.userId}`) void sincronizar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conta?.userId, carregadoPara]);
+
+  // guarda na conta o que mudou (um instante depois de parares de escrever)
+  useEffect(() => {
+    if (!conta || sincronizadoPara !== `u:${conta.userId}`) return;
+    if (!chats.some((c) => enviadas.current.get(c.id) !== assinaturaChat(c))) return;
+    const t = setTimeout(() => void enviarPendentes(), 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chats, conta, sincronizadoPara]);
 
   useEffect(() => {
     fim.current?.scrollIntoView?.({ behavior: "smooth" });
@@ -338,11 +578,7 @@ export default function ChatPage() {
     setErroCodigo("");
     setAVerificar(true);
     try {
-      const res = await fetch("/api/acesso", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codigo: c }),
-      });
+      const res = await chamar("/api/acesso", { tipo: "codigo", codigo: c });
       const d = await res.json();
       if (res.status === 403 && (d.expirado || d.inativo)) {
         // o código é válido mas está suspenso: entra, com o aviso e o link para renovar
@@ -371,31 +607,125 @@ export default function ChatPage() {
     }
   }
 
-  function sair() {
+  async function sair() {
+    if (conta) {
+      try {
+        await sairDaConta();
+      } catch {
+        /* sem ligação: sai na mesma deste aparelho */
+      }
+    }
     apagarStorage(CODIGO_KEY);
-    setCodigo(null);
-    setRestantes(null);
-    setLimite(null);
-    setAssinatura(null);
-    setNomeAluno("");
-    setBloqueio("");
-    setMenuAberto(false);
+    limparSessaoLocal();
   }
+
+  async function entrarGoogle() {
+    setErroCodigo("");
+    try {
+      await entrarComGoogle();
+    } catch {
+      setErroCodigo("Não consegui abrir o Google. Tenta de novo (e abre o link no Chrome ou no Safari).");
+    }
+  }
+
+  // quem já usa um código: leva-o para a conta Google (e o código passa a ser só dessa conta)
+  async function guardarNaConta() {
+    if (codigo) gravarStorage("cold:ligar", codigo);
+    await entrarGoogle();
+  }
+
+  async function criarTesteConta() {
+    setErroSemPlano("");
+    setAAtivar(true);
+    try {
+      const t = await tokenAtual();
+      const r = await fetch("/api/conta/teste", { method: "POST", headers: { Authorization: `Bearer ${t}` } });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Erro.");
+      await atualizarLimite({ tipo: "conta" });
+    } catch (e) {
+      setErroSemPlano(e instanceof Error ? e.message : "Erro de ligação.");
+    } finally {
+      setAAtivar(false);
+    }
+  }
+
+  async function ligarCodigo(cod: string) {
+    setErroSemPlano("");
+    setAAtivar(true);
+    try {
+      const t = await tokenAtual();
+      const r = await fetch("/api/conta/codigo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+        body: JSON.stringify({ codigo: cod }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Erro.");
+      // traz para a conta as conversas que este aparelho tinha com esse código
+      const locais = lerStorage<Chat[]>(chatsKey(cod));
+      if (locais && locais.length > 0) {
+        setChats((prev) => {
+          const ids = new Set(prev.map((x) => x.id));
+          return [...prev, ...locais.filter((x) => !ids.has(x.id))];
+        });
+        apagarStorage(chatsKey(cod));
+        apagarStorage(ativoKey(cod));
+      }
+      apagarStorage(CODIGO_KEY);
+      setCodigoSemPlano("");
+      await atualizarLimite({ tipo: "conta" });
+    } catch (e) {
+      setErroSemPlano(e instanceof Error ? e.message : "Erro de ligação.");
+    } finally {
+      setAAtivar(false);
+    }
+  }
+
+  // depois de entrar com o Google: continua o que a pessoa queria (ligar o código que já tinha, ou o teste grátis)
+  useEffect(() => {
+    if (!conta || !semPlano) return;
+    const lig = lerStorage<string>("cold:ligar");
+    const acao = lerStorage<string>("cold:acao");
+    if (lig) {
+      apagarStorage("cold:ligar");
+      apagarStorage("cold:acao");
+      void ligarCodigo(lig);
+    } else if (acao === "teste") {
+      apagarStorage("cold:acao");
+      if (semPlano.testeAberto) void criarTesteConta();
+      else setErroSemPlano("Os testes grátis estão fechados de momento. Podes ver as assinaturas.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conta, semPlano]);
 
   async function pedirResposta(historico: Msg[], perfilAtual: Perfil, chatId: string) {
     setErro(null);
     setCarregandoId(chatId);
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: historico.map((m) => ({ role: m.role, content: m.content })),
-          perfil: perfilAtual,
-          codigo,
-        }),
+      const quem = quemAtual();
+      if (!quem) throw new Error("Entra primeiro com o teu Google ou o teu código.");
+      const res = await chamar("/api/chat", quem, {
+        messages: historico.map((m) => ({ role: m.role, content: m.content })),
+        perfil: perfilAtual,
       });
       const data = await res.json();
+      if (res.status === 401 && data.sessaoInvalida) {
+        limparSessaoLocal();
+        void sairDaConta().catch(() => {});
+        setErroCodigo("A tua sessão terminou. Entra outra vez.");
+        return;
+      }
+      if (res.status === 403 && data.semPlano) {
+        await atualizarLimite({ tipo: "conta" });
+        return;
+      }
+      if (res.status === 403 && data.ligado) {
+        apagarStorage(CODIGO_KEY);
+        setCodigo(null);
+        setErroCodigo(data.error);
+        return;
+      }
       if (res.status === 401 && data.codigoInvalido) {
         apagarStorage(CODIGO_KEY);
         setCodigo(null);
@@ -522,6 +852,14 @@ export default function ChatPage() {
 
   function apagar(c: Chat) {
     if (!window.confirm(`Apagar o chat "${c.titulo}"? Não dá para desfazer.`)) return;
+    if (conta) {
+      const k = `u:${conta.userId}`;
+      const pend = lerStorage<{ id: string; atualizado: number }[]>(apagarKey(k)) ?? [];
+      pend.push({ id: c.id, atualizado: Date.now() });
+      gravarStorage(apagarKey(k), pend);
+      enviadas.current.delete(c.id);
+      void enviarApagados(k);
+    }
     const restoChats = chats.filter((x) => x.id !== c.id);
     setChats(restoChats);
     if (c.id === ativoId) {
@@ -553,7 +891,7 @@ export default function ChatPage() {
     <div className="chat-shell">
       <header className="chat-header">
         <div className="header-left">
-          {codigo && (
+          {chave && (
             <button className="menu-btn" aria-label="Abrir menu de chats" onClick={() => setMenuAberto((v) => !v)}>
               ☰
             </button>
@@ -561,10 +899,10 @@ export default function ChatPage() {
           <Link href="/" className="brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/cold-logo-emblem.png" alt="Cold" />
-            {perfil && codigo && !mostrarFormulario && <span className="sub">{perfil.area}</span>}
+            {perfil && chave && !mostrarFormulario && <span className="sub">{perfil.area}</span>}
           </Link>
         </div>
-        {codigo && restantes !== null && limite !== null && (
+        {chave && restantes !== null && limite !== null && (
           <div className="header-right">
             <span className="counter">Trocas de hoje: {restantes}/{limite}</span>
           </div>
@@ -572,7 +910,7 @@ export default function ChatPage() {
       </header>
 
       <div className="chat-main">
-        {codigo && (
+        {chave && (
           <>
             {menuAberto && <div className="sidebar-overlay" onClick={() => setMenuAberto(false)} />}
             <aside className={`sidebar${menuAberto ? " open" : ""}`} aria-label="Os teus chats">
@@ -615,6 +953,26 @@ export default function ChatPage() {
                 ))}
               </nav>
               <div className="sidebar-foot">
+                {conta ? (
+                  <p className="plano-info">
+                    Conta: {conta.email}
+                    <br />
+                    {erroSync ? (
+                      <span className="alerta">{erroSync}</span>
+                    ) : sincronizadoPara === `u:${conta.userId}` ? (
+                      "☁ Conversas guardadas na tua conta"
+                    ) : (
+                      "A sincronizar as tuas conversas…"
+                    )}
+                  </p>
+                ) : CONTAS_ATIVAS ? (
+                  <div>
+                    <p className="plano-info">As tuas conversas só ficam neste aparelho.</p>
+                    <button className="btn btn-ghost" type="button" style={{ marginBottom: 8, width: "100%" }} onClick={guardarNaConta}>
+                      Guardar na minha conta Google
+                    </button>
+                  </div>
+                ) : null}
                 {assinatura?.plano && (
                   <p className={`plano-info${assinatura.diasRestantes !== null && assinatura.diasRestantes <= 3 ? " alerta" : ""}`}>
                     Plano {assinatura.plano}
@@ -637,7 +995,7 @@ export default function ChatPage() {
         )}
 
         <div className="chat-col">
-          {codigo && bloqueio && (
+          {chave && bloqueio && (
             <div className="aviso erro aviso-topo" role="alert">
               {bloqueio}{" "}
               <Link href="/pagar" className="btn btn-ghost">
@@ -645,11 +1003,28 @@ export default function ChatPage() {
               </Link>
             </div>
           )}
-          {!codigo ? (
+          {!chave ? (
             <div className="chat-body">
               <form className="onboarding" onSubmit={entrar}>
-                <h1>Acesso por convite</h1>
-                <p>O Cold está em fase piloto. Introduz o código que recebeste.</p>
+                <h1>{CONTAS_ATIVAS ? "Entra no Cold" : "Acesso por convite"}</h1>
+                <p>
+                  {CONTAS_ATIVAS
+                    ? "Entra com o teu Google e as tuas conversas ficam guardadas na tua conta, em qualquer aparelho."
+                    : "O Cold está em fase piloto. Introduz o código que recebeste."}
+                </p>
+                {CONTAS_ATIVAS && (
+                  <>
+                    <button className="btn btn-google" type="button" onClick={entrarGoogle}>
+                      Continuar com Google
+                    </button>
+                    <p className="gate-links">
+                      Se abriste este link dentro do WhatsApp ou do Instagram, abre-o no Chrome ou no Safari para entrar com o Google.
+                    </p>
+                    <div className="divisor">
+                      <span>ou entra com um código</span>
+                    </div>
+                  </>
+                )}
                 <div className="field">
                   <label htmlFor="codigo">Código de acesso</label>
                   <input
@@ -671,10 +1046,53 @@ export default function ChatPage() {
                 </p>
               </form>
             </div>
+          ) : semPlano ? (
+            <div className="chat-body">
+              <div className="onboarding">
+                <h1>{conta?.nome ? `Olá, ${primeiroNomeLocal(conta.nome)}!` : "Olá!"}</h1>
+                <p>Para começares, escolhe como queres usar o Cold.</p>
+                {erroSemPlano && (
+                  <div className="error" style={{ marginBottom: 16 }}>
+                    {erroSemPlano}
+                  </div>
+                )}
+                {semPlano.testeAberto && (
+                  <p>
+                    <button className="btn" type="button" onClick={criarTesteConta} disabled={aAtivar}>
+                      {aAtivar ? "A preparar…" : "Experimentar 7 dias grátis"}
+                    </button>
+                  </p>
+                )}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const c = codigoSemPlano.trim().toUpperCase();
+                    if (c) void ligarCodigo(c);
+                  }}
+                >
+                  <div className="field">
+                    <label htmlFor="codigo-conta">Já tens um código?</label>
+                    <input
+                      id="codigo-conta"
+                      autoComplete="off"
+                      value={codigoSemPlano}
+                      onChange={(e) => setCodigoSemPlano(e.target.value)}
+                      placeholder="ex.: COLD-ABC23"
+                    />
+                  </div>
+                  <button className="btn btn-ghost" type="submit" disabled={aAtivar || codigoSemPlano.trim() === ""}>
+                    Ativar o meu código
+                  </button>
+                </form>
+                <p className="gate-links">
+                  <Link href="/pagar">Ver planos e como pagar</Link>
+                </p>
+              </div>
+            </div>
           ) : mostrarFormulario ? (
             <div className="chat-body">
               <form className="onboarding" onSubmit={comecar}>
-                <h1>{chats.length === 0 ? (nomeAluno ? `Vamos conhecer-te, ${nomeAluno}` : "Vamos conhecer-te") : "Novo chat"}</h1>
+                <h1>{chats.length === 0 ? (nomeAluno || primeiroNomeLocal(conta?.nome) ? `Vamos conhecer-te, ${nomeAluno || primeiroNomeLocal(conta?.nome)}` : "Vamos conhecer-te") : "Novo chat"}</h1>
                 <p>
                   {chats.length === 0
                     ? "Três respostas rápidas para o Cold ajustar o ensino a ti."
@@ -831,8 +1249,14 @@ export default function ChatPage() {
                 {!limiteOk && !semTrocas && !bloqueio && (
                   <div className="aviso erro" role="alert">
                     {erroLimite || "A verificar o teu limite de hoje…"}{" "}
-                    {codigo && (
-                      <button className="btn btn-ghost" onClick={() => atualizarLimite(codigo)}>
+                    {chave && (
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => {
+                          const q = quemAtual();
+                          if (q) void atualizarLimite(q);
+                        }}
+                      >
                         Tentar de novo
                       </button>
                     )}
