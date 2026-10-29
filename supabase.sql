@@ -70,3 +70,28 @@ create table if not exists chats (
 );
 create index if not exists chats_user on chats (user_id, atualizado desc);
 alter table chats enable row level security;
+
+-- ---------- Planos reservados a um email (o plano aparece quando a pessoa entra com esse Google) ----------
+alter table acessos add column if not exists email text;
+alter table acessos add column if not exists email_chave text;
+create index if not exists acessos_email_chave on acessos (email_chave);
+
+-- ---------- Pedidos de plano (a pessoa pede, paga por Express, e tu confirmas no painel) ----------
+create table if not exists pedidos (
+  ref           text primary key,
+  user_id       uuid not null,
+  email         text not null default '',
+  nome          text not null default '',
+  tipo          text not null,                 -- basico | estudante | intensivo | personalizado
+  trocas_dia    int  not null,
+  dias          int  not null,
+  preco_kz      int  not null,
+  quando        text not null default 'depois',  -- agora | depois
+  estado        text not null default 'pendente', -- pendente | confirmado | cancelado
+  codigo        text,
+  criado_em     timestamptz not null default now(),
+  confirmado_em timestamptz
+);
+create index if not exists pedidos_user on pedidos (user_id, criado_em desc);
+create index if not exists pedidos_estado on pedidos (estado);
+alter table pedidos enable row level security;

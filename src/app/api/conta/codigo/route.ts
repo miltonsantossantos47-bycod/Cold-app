@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { limiteDiario, normalizarCodigo, tipoDoCodigo } from "../../../../lib/acesso";
+import { emailCanonico } from "../../../../lib/contacto";
 import { criarAcesso, obterAcesso, temSupabase, vincularSeLivre } from "../../../../lib/acessos";
 import { sessaoInvalida } from "../../../../lib/respostas";
 import { contasAtivas, tokenDoPedido, verificarToken } from "../../../../lib/sessao";
@@ -32,6 +33,9 @@ export async function POST(req: Request) {
 
     const a = await obterAcesso(codigo);
     if (a) {
+      if (a.email_chave && !(u.emailVerificado && a.email_chave === emailCanonico(u.email))) {
+        return NextResponse.json({ error: "Este acesso foi reservado para outro email." }, { status: 409 });
+      }
       if (a.user_id === u.id) return NextResponse.json({ ok: true, codigo });
       if (a.user_id) return NextResponse.json({ error: "Este código já está ligado a outra conta." }, { status: 409 });
       const ligado = await vincularSeLivre(codigo, u.id, { nome: a.nome || u.nome, contacto: a.contacto || u.email });

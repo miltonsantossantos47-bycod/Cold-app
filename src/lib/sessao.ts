@@ -1,5 +1,6 @@
 // Contas com Google (Supabase Auth). O navegador envia o "token" da sessão; aqui confirmamos com a Supabase quem é.
-export type Usuario = { id: string; email: string; nome: string };
+// emailVerificado: o email foi confirmado e a conta entrou pelo Google (só assim se aceita reclamar um plano reservado a um email).
+export type Usuario = { id: string; email: string; nome: string; emailVerificado: boolean };
 
 const cache = new Map<string, { u: Usuario; ate: number }>();
 
@@ -31,12 +32,25 @@ export async function verificarToken(token: string): Promise<Usuario | null> {
   });
   if (r.status === 401 || r.status === 403) return null;
   if (!r.ok) throw new Error("Falha a verificar a sessão.");
-  const d = (await r.json()) as { id?: string; email?: string; user_metadata?: Record<string, unknown> };
+  const d = (await r.json()) as {
+    id?: string;
+    email?: string;
+    email_confirmed_at?: string | null;
+    user_metadata?: Record<string, unknown>;
+    app_metadata?: { provider?: string; providers?: string[] };
+  };
   if (!d?.id) return null;
   const meta = d.user_metadata ?? {};
   const nomeMeta = String(meta.full_name || meta.name || "").trim();
   const email = String(d.email ?? "");
-  const u: Usuario = { id: String(d.id), email, nome: (nomeMeta || email.split("@")[0]).slice(0, 80) };
+  const app = d.app_metadata ?? {};
+  const viaGoogle = app.provider === "google" || (Array.isArray(app.providers) && app.providers.includes("google"));
+  const u: Usuario = {
+    id: String(d.id),
+    email,
+    nome: (nomeMeta || email.split("@")[0]).slice(0, 80),
+    emailVerificado: Boolean(d.email_confirmed_at) && viaGoogle,
+  };
   if (cache.size > 500) cache.clear();
   cache.set(token, { u, ate: Date.now() + 60_000 });
   return u;

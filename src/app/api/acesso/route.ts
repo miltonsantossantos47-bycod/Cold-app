@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
   let p;
   try {
-    p = await resolverPedido(req, body?.codigo);
+    p = await resolverPedido(req, body?.codigo, { reivindicar: true });
   } catch {
     return NextResponse.json({ error: "Não consegui verificar o teu acesso." }, { status: 500 });
   }

@@ -322,7 +322,7 @@ export default function ChatPage() {
         setErroCodigo(d.error ?? "Este código já está ligado a uma conta.");
         return;
       }
-      if (res.status === 403 && d && (d.expirado || d.inativo)) {
+      if (res.status === 403 && d && (d.expirado || d.inativo || d.agendado)) {
         setSemPlano(null);
         setBloqueio(d.error ?? "O teu acesso está suspenso.");
         setLimiteOk(false);
@@ -580,7 +580,7 @@ export default function ChatPage() {
     try {
       const res = await chamar("/api/acesso", { tipo: "codigo", codigo: c });
       const d = await res.json();
-      if (res.status === 403 && (d.expirado || d.inativo)) {
+      if (res.status === 403 && (d.expirado || d.inativo || d.agendado)) {
         // o código é válido mas está suspenso: entra, com o aviso e o link para renovar
         gravarStorage(CODIGO_KEY, c);
         setCodigo(c);
@@ -682,6 +682,16 @@ export default function ChatPage() {
     }
   }
 
+  // quem entrou a partir da página /pagar volta para lá
+  useEffect(() => {
+    if (!conta) return;
+    const destino = lerStorage<string>("cold:destino");
+    if (destino) {
+      apagarStorage("cold:destino");
+      if (destino === "/pagar") window.location.assign(destino);
+    }
+  }, [conta]);
+
   // depois de entrar com o Google: continua o que a pessoa queria (ligar o código que já tinha, ou o teste grátis)
   useEffect(() => {
     if (!conta || !semPlano) return;
@@ -732,7 +742,7 @@ export default function ChatPage() {
         setErroCodigo("O teu código deixou de ser válido. Introduz outro.");
         return;
       }
-      if (res.status === 403 && (data.expirado || data.inativo)) {
+      if (res.status === 403 && (data.expirado || data.inativo || data.agendado)) {
         setBloqueio(data.error ?? "O teu acesso está suspenso.");
         setLimiteOk(false);
         return;
@@ -1063,6 +1073,23 @@ export default function ChatPage() {
                     </button>
                   </p>
                 )}
+                <p className="gate-links" style={{ marginTop: 0 }}>
+                  Já pagaste? Se o teu plano foi ativado para o email {conta?.email || "do teu Google"}, verifica aqui:
+                </p>
+                <p>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={aAtivar}
+                    onClick={async () => {
+                      setAAtivar(true);
+                      await atualizarLimite({ tipo: "conta" });
+                      setAAtivar(false);
+                    }}
+                  >
+                    Verificar o meu plano
+                  </button>
+                </p>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();

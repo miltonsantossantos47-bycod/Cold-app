@@ -1,16 +1,24 @@
 import { NextResponse } from "next/server";
 import { diasEntre, hojeEmLuanda, normalizarCodigo, somarDias, tipoDoCodigo } from "../../../../lib/acesso";
+import { emailCanonico, emailValido } from "../../../../lib/contacto";
+import { contasAtivas } from "../../../../lib/sessao";
 import {
+  apagarAcesso,
+  apagarPagamento,
+  apagarTodosPagamentos,
   atualizarAcesso,
   criarAcesso,
   gerarCodigo,
   listarAcessos,
+  listarAcessosDoUsuario,
   listarPagamentos,
   obterAcesso,
+  procurarPorEmail,
   registarPagamento,
   temSupabase,
   type Acesso,
 } from "../../../../lib/acessos";
+import { atualizarPedido, listarPedidosPendentes, listarPedidosRecentes, obterPedido } from "../../../../lib/pedidos";
 import { PLANOS, planoPorId } from "../../../../lib/planos";
 
 export const dynamic = "force-dynamic";
@@ -19,15 +27,21 @@ function autorizado(req: Request): boolean {
   return tipoDoCodigo(req.headers.get("x-codigo")) === "ilimitado";
 }
 
-function estadoDe(a: Acesso, hoje: string): "ativo" | "expirado" | "desativado" | "por iniciar" {
+function estadoDe(a: Acesso, hoje: string): "ativo" | "expirado" | "desativado" | "por iniciar" | "agendado" {
   if (!a.ativo) return "desativado";
+  if (a.inicio && a.plano !== "teste" && a.inicio > hoje) return "agendado";
   if (!a.valido_ate) return a.plano === "teste" ? "por iniciar" : "ativo";
   return hoje > a.valido_ate ? "expirado" : "ativo";
 }
 
 async function estadoGeral() {
   const hoje = hojeEmLuanda();
-  const [acessos, pagamentos] = await Promise.all([listarAcessos(), listarPagamentos()]);
+  const [acessos, pagamentos, pedidos, pedidosRecentes] = await Promise.all([
+    listarAcessos(),
+    listarPagamentos(),
+    listarPedidosPendentes(),
+    listarPedidosRecentes(),
+  ]);
   return {
     hoje,
     planos: PLANOS,
@@ -38,6 +52,9 @@ async function estadoGeral() {
     })),
     receitaKz: pagamentos.reduce((s, p) => s + (p.valor_kz || 0), 0),
     pagamentos: pagamentos.length,
+    listaPagamentos: pagamentos.slice(0, 50),
+    pedidos, // pendentes (por confirmar)
+    pedidosRecentes,
   };
 }
 
@@ -85,6 +102,25 @@ export async function POST(req: Request) {
       const valor = b.valorKz === undefined || b.valorKz === "" ? plano.precoKz : inteiro(b.valorKz, 0, 1_000_000);
       if (dias === null || valor === null) return NextResponse.json({ error: "Dias ou valor inválidos." }, { status: 400 });
 
+      // Plano reservado a um email: quando a pessoa entrar com esse Google, o plano aparece sozinho.
+      let email: string | null = null;
+      let emailChave: string | null = null;
+      if (typeof b.email === "string" && b.email.trim() !== "") {
+        if (!emailValido(b.email)) return NextResponse.json({ error: "Email inválido." }, { status: 400 });
+        if (!contasAtivas()) {
+          return NextResponse.json(
+            { error: "As contas Google ainda não estão ligadas (faltam NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY)." },
+            { status: 400 }
+          );
+        }
+        email = b.email.trim().toLowerCase();
+        emailChave = emailCanonico(email);
+        const ja = await procurarPorEmail(emailChave);
+        if (ja) {
+          return NextResponse.json({ error: `Já existe um acesso para este email (${ja.codigo}). Usa «Renovar» nesse.` }, { status: 409 });
+        }
+      }
+
       const manual = typeof b.codigo === "string" && b.codigo.trim() !== "";
       let codigo = manual ? normalizarCodigo(b.codigo) : "";
       if (manual && !codigo) {
@@ -110,6 +146,7 @@ export async function POST(req: Request) {
           valido_ate: teste ? null : somarDias(hoje, dias - 1),
           ativo: true,
           notas: texto(b.notas, 200),
+          ...(email ? { email, email_chave: emailChave } : {}),
         };
         const criado = await criarAcesso(novo);
         if (criado) {
@@ -119,6 +156,69 @@ export async function POST(req: Request) {
         if (manual) return NextResponse.json({ error: "Esse código já existe." }, { status: 409 });
       }
       return NextResponse.json({ error: "Não consegui gerar um código único. Tenta de novo." }, { status: 500 });
+    }
+
+    // ----- pagamentos registados (para limpar testes) -----
+    if (b.acao === "apagar-pagamento") {
+      const id = inteiro(b.id, 1, Number.MAX_SAFE_INTEGER);
+      if (id === null) return NextResponse.json({ error: "Pagamento inválido." }, { status: 400 });
+      if ((await apagarPagamento(id)) === 0) return NextResponse.json({ error: "Pagamento não encontrado." }, { status: 404 });
+      return NextResponse.json({ ok: true, ...(await estadoGeral()) });
+    }
+    if (b.acao === "limpar-pagamentos") {
+      const n = await apagarTodosPagamentos();
+      return NextResponse.json({ ok: true, apagados: n, ...(await estadoGeral()) });
+    }
+
+    // ----- pedidos de plano feitos pelos alunos -----
+    if (b.acao === "confirmar-pedido" || b.acao === "cancelar-pedido") {
+      const p = typeof b.ref === "string" ? await obterPedido(b.ref.trim().toUpperCase()) : null;
+      if (!p) return NextResponse.json({ error: "Pedido não encontrado." }, { status: 404 });
+      if (p.estado !== "pendente") return NextResponse.json({ error: "Este pedido já foi tratado." }, { status: 409 });
+      if (b.acao === "cancelar-pedido") {
+        await atualizarPedido(p.ref, { estado: "cancelado" });
+        return NextResponse.json({ ok: true, ...(await estadoGeral()) });
+      }
+      const valor = b.valorKz === undefined || b.valorKz === "" ? p.preco_kz : inteiro(b.valorKz, 0, 1_000_000);
+      if (valor === null) return NextResponse.json({ error: "Valor inválido." }, { status: 400 });
+
+      // "depois": começa no dia a seguir ao fim do que a pessoa já tem; "agora": começa hoje e convive com o resto (vale o melhor limite)
+      let inicio = hoje;
+      if (p.quando === "depois") {
+        const fins = (await listarAcessosDoUsuario(p.user_id))
+          .filter((x) => x.ativo && x.valido_ate && x.valido_ate >= hoje)
+          .map((x) => x.valido_ate as string)
+          .sort();
+        if (fins.length > 0) inicio = somarDias(fins[fins.length - 1], 1);
+      }
+      const nomePlano = planoPorId(p.tipo)?.nome ?? p.tipo;
+      for (let tentativa = 0; tentativa < 8; tentativa++) {
+        const codigoNovo = gerarCodigo();
+        if (tipoDoCodigo(codigoNovo)) continue;
+        const novo: Acesso = {
+          codigo: codigoNovo,
+          nome: p.nome,
+          contacto: p.email,
+          plano: p.tipo,
+          limite_diario: p.trocas_dia, // fica guardado: mesmo que mudes os planos, este pedido mantém o que foi pago
+          inicio,
+          valido_ate: somarDias(inicio, p.dias - 1),
+          ativo: true,
+          notas: `pedido:${p.ref}`,
+          user_id: p.user_id,
+        };
+        if (await criarAcesso(novo)) {
+          if (valor > 0) await registarPagamento({ codigo: codigoNovo, plano: p.tipo, valor_kz: valor, dias: p.dias });
+          await atualizarPedido(p.ref, { estado: "confirmado", codigo: codigoNovo, confirmado_em: new Date().toISOString() });
+          return NextResponse.json({
+            ok: true,
+            codigo: codigoNovo,
+            confirmacao: { nome: p.nome, plano: nomePlano, trocas_dia: p.trocas_dia, inicio, valido_ate: novo.valido_ate },
+            ...(await estadoGeral()),
+          });
+        }
+      }
+      return NextResponse.json({ error: "Não consegui ativar o plano. Tenta de novo." }, { status: 500 });
     }
 
     const codigo = normalizarCodigo(b.codigo);
@@ -142,6 +242,15 @@ export async function POST(req: Request) {
         ativo: true,
       });
       if (valor > 0) await registarPagamento({ codigo, plano: plano.id, valor_kz: valor, dias });
+      return NextResponse.json({ ok: true, codigo, ...(await estadoGeral()) });
+    }
+
+    if (b.acao === "apagar") {
+      if (a.ativo) {
+        return NextResponse.json({ error: "Só podes apagar assinaturas desativadas. Desativa primeiro." }, { status: 409 });
+      }
+      // Os pagamentos registados ficam (o total recebido não muda); só desaparece o acesso.
+      await apagarAcesso(codigo);
       return NextResponse.json({ ok: true, codigo, ...(await estadoGeral()) });
     }
 

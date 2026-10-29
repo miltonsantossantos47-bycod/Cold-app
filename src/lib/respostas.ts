@@ -16,6 +16,12 @@ export function respostaDeBloqueio(r: Extract<Resolucao, { ok: false }>): NextRe
       { status: 403 }
     );
   }
+  if (r.motivo === "agendado") {
+    return NextResponse.json(
+      { error: `O teu plano ${r.plano} começa a ${formatarData(r.inicio)}.`, agendado: true, inicio: r.inicio },
+      { status: 403 }
+    );
+  }
   if (r.motivo === "expirado") {
     return NextResponse.json(
       {

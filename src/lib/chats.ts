@@ -22,6 +22,18 @@ export type ChatDB = {
 };
 export type Meta = { id: string; titulo: string; atualizado: number; apagado: boolean };
 
+// Uma linha da tabela "chats" tal como a Supabase a devolve.
+type LinhaChat = {
+  id: string;
+  titulo: string | null;
+  titulo_definido: boolean;
+  perfil: PerfilChat | null;
+  msgs: MsgChat[] | null;
+  criado: number | string;
+  atualizado: number | string;
+  apagado: boolean;
+};
+
 const MAX_CHATS = 100;
 const MAX_MSGS = 400;
 const MAX_TEXTO_MSG = 12000;
@@ -85,7 +97,7 @@ export async function listarMetas(userId: string): Promise<Meta[]> {
     { headers: cabecalhos(sb.key), cache: "no-store" }
   );
   if (!r.ok) throw new Error("Erro a listar os chats (já correste o supabase.sql?).");
-  const rows = (await r.json()) as Record<string, any>[];
+  const rows = (await r.json()) as Partial<LinhaChat>[];
   // devolve só o essencial (nunca o conteúdo das conversas)
   return rows.map((x) => ({ id: String(x.id), titulo: String(x.titulo ?? ""), atualizado: Number(x.atualizado), apagado: Boolean(x.apagado) }));
 }
@@ -97,13 +109,13 @@ export async function obterChat(userId: string, id: string): Promise<ChatDB | nu
     cache: "no-store",
   });
   if (!r.ok) throw new Error("Erro a ler o chat.");
-  const rows = (await r.json()) as Record<string, any>[];
+  const rows = (await r.json()) as LinhaChat[];
   const row = rows[0];
   if (!row || row.apagado) return null;
   return {
     id: row.id,
-    titulo: row.titulo,
-    tituloDefinido: row.titulo_definido,
+    titulo: row.titulo ?? "",
+    tituloDefinido: Boolean(row.titulo_definido),
     perfil: row.perfil ?? {},
     msgs: row.msgs ?? [],
     criado: Number(row.criado),

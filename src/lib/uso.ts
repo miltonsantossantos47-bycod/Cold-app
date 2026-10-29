@@ -101,3 +101,25 @@ export async function listarUso(desdeDia: string): Promise<LinhaUso[]> {
   const linhas = await lerFicheiro();
   return linhas.filter((l) => l.dia >= desdeDia).sort((a, b) => (a.dia < b.dia ? 1 : -1));
 }
+
+// Apaga linhas de uso de dias ANTERIORES a "antesDe" (nunca o dia de hoje: apagá-lo repunha os limites diários).
+// Pode filtrar por código e/ou por um dia. Devolve quantas linhas apagou.
+export async function apagarUso(filtro: { antesDe: string; codigo?: string; dia?: string }): Promise<number> {
+  const { antesDe, codigo, dia } = filtro;
+  const sb = supabase();
+  if (sb) {
+    const q = [`dia=lt.${antesDe}`];
+    if (dia) q.push(`dia=eq.${dia}`);
+    if (codigo) q.push(`codigo=eq.${encodeURIComponent(codigo)}`);
+    const r = await fetch(`${sb.url}/rest/v1/uso_diario?${q.join("&")}&select=codigo`, {
+      method: "DELETE",
+      headers: { ...cabecalhos(sb.key), Prefer: "return=representation" },
+    });
+    if (!r.ok) throw new Error("Erro a apagar o histórico de uso na Supabase.");
+    return ((await r.json()) as unknown[]).length;
+  }
+  const linhas = await lerFicheiro();
+  const ficam = linhas.filter((l) => !(l.dia < antesDe && (!dia || l.dia === dia) && (!codigo || l.codigo === codigo)));
+  await gravarFicheiro(ficam);
+  return linhas.length - ficam.length;
+}

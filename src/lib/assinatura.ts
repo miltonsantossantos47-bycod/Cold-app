@@ -2,7 +2,16 @@
 // Quem pede: 1) uma conta Google (token) ou 2) um código.
 // Para códigos: o teu código ilimitado; assinaturas na Supabase; códigos antigos das variáveis (CODIGOS_ACESSO).
 import { diasEntre, hojeEmLuanda, limiteDiario, normalizarCodigo, somarDias, tipoDoCodigo } from "./acesso";
-import { atualizarAcesso, listarAcessosDoUsuario, obterAcesso, temSupabase, type Acesso } from "./acessos";
+import {
+  atualizarAcesso,
+  listarAcessosDoUsuario,
+  listarReservadosPorEmail,
+  obterAcesso,
+  temSupabase,
+  vincularSeLivre,
+  type Acesso,
+} from "./acessos";
+import { emailCanonico } from "./contacto";
 import { limiteDoPlano, planoPorId } from "./planos";
 import { contasAtivas, tokenDoPedido, verificarToken, type Usuario } from "./sessao";
 
@@ -23,6 +32,7 @@ export type Resolucao =
   | { ok: false; motivo: "inativo" }
   | { ok: false; motivo: "ligado" } // o código já está ligado a uma conta: só se entra com o Google
   | { ok: false; motivo: "sem-plano" } // conta sem nenhum plano ainda
+  | { ok: false; motivo: "agendado"; inicio: string; plano: string } // pago, mas só começa mais tarde
   | { ok: false; motivo: "expirado"; validoAte: string; plano: string };
 
 // Regras de uma assinatura (ativa, validade, teste grátis, limite do dia).
@@ -39,6 +49,9 @@ async function avaliarAcesso(a: Acesso): Promise<Resolucao> {
     await atualizarAcesso(a.codigo, { inicio: a.inicio, valido_ate: a.valido_ate });
   }
 
+  if (a.inicio && hoje < a.inicio) {
+    return { ok: false, motivo: "agendado", inicio: a.inicio, plano: plano?.nome ?? a.plano };
+  }
   if (a.valido_ate && hoje > a.valido_ate) {
     return { ok: false, motivo: "expirado", validoAte: a.valido_ate, plano: plano?.nome ?? a.plano };
   }
@@ -69,6 +82,7 @@ export async function resolverAcesso(codigoBruto: unknown): Promise<Resolucao> {
     const a = await obterAcesso(codigo);
     if (a) {
       if (a.user_id) return { ok: false, motivo: "ligado" };
+      if (a.email_chave) return { ok: false, motivo: "invalido" }; // reservado a um email: só se entra com esse Google
       return avaliarAcesso(a);
     }
   }
@@ -80,8 +94,18 @@ export async function resolverAcesso(codigoBruto: unknown): Promise<Resolucao> {
 }
 
 // Uma conta pode ter vários códigos ligados (ex.: teste e depois uma assinatura): vale o melhor que esteja válido.
-export async function resolverConta(userId: string): Promise<Resolucao> {
-  const lista = await listarAcessosDoUsuario(userId);
+// Se "reivindicar", também liga à conta os planos que o painel reservou para o email do Google (só com email verificado).
+// Sem plano nenhum, procura sempre (é barato e é o caso de quem acabou de pagar).
+export async function resolverConta(user: Usuario, reivindicar = true): Promise<Resolucao> {
+  const lista = await listarAcessosDoUsuario(user.id);
+  if (user.emailVerificado && user.email && (reivindicar || lista.length === 0)) {
+    for (const a of await listarReservadosPorEmail(emailCanonico(user.email))) {
+      if (await vincularSeLivre(a.codigo, user.id, {})) {
+        a.user_id = user.id;
+        lista.push(a);
+      }
+    }
+  }
   if (lista.length === 0) return { ok: false, motivo: "sem-plano" };
   const avaliados: Resolucao[] = [];
   for (const a of lista) avaliados.push(await avaliarAcesso(a));
@@ -90,6 +114,11 @@ export async function resolverConta(userId: string): Promise<Resolucao> {
   if (validos.length > 0) {
     validos.sort((x, y) => y.limite - x.limite || (y.validoAte ?? "9999").localeCompare(x.validoAte ?? "9999"));
     return validos[0];
+  }
+  const agendados = avaliados.filter((r): r is Extract<Resolucao, { motivo: "agendado" }> => !r.ok && r.motivo === "agendado");
+  if (agendados.length > 0) {
+    agendados.sort((x, y) => x.inicio.localeCompare(y.inicio));
+    return agendados[0];
   }
   const expirados = avaliados.filter((r): r is Extract<Resolucao, { motivo: "expirado" }> => !r.ok && r.motivo === "expirado");
   if (expirados.length > 0) {
@@ -103,13 +132,17 @@ export type Pedido =
   | { tipo: "sessao-invalida" }
   | { tipo: "resolucao"; resolucao: Resolucao; usuario: Usuario | null };
 
-export async function resolverPedido(req: Request, codigoBruto: unknown): Promise<Pedido> {
+export async function resolverPedido(
+  req: Request,
+  codigoBruto: unknown,
+  opcoes: { reivindicar?: boolean } = {}
+): Promise<Pedido> {
   const token = tokenDoPedido(req);
   if (token) {
     if (!contasAtivas() || !temSupabase()) return { tipo: "sessao-invalida" };
     const usuario = await verificarToken(token);
     if (!usuario) return { tipo: "sessao-invalida" };
-    return { tipo: "resolucao", resolucao: await resolverConta(usuario.id), usuario };
+    return { tipo: "resolucao", resolucao: await resolverConta(usuario, opcoes.reivindicar ?? false), usuario };
   }
   return { tipo: "resolucao", resolucao: await resolverAcesso(codigoBruto), usuario: null };
 }

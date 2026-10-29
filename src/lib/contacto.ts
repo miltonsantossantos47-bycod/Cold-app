@@ -16,3 +16,16 @@ export function normalizarTelefone(v: unknown): string {
   if (d.length === 9) d = "244" + d; // número angolano sem indicativo
   return d.length >= 11 && d.length <= 15 ? d : "";
 }
+
+export function emailValido(e: unknown): e is string {
+  return typeof e === "string" && e.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+}
+
+// Forma "canónica" para comparar emails: o Gmail ignora os pontos e o "+etiqueta"
+// (joao.m+x@gmail.com e joaom@gmail.com são a mesma caixa), por isso comparamos assim.
+export function emailCanonico(e: string): string {
+  const [l, d] = e.trim().toLowerCase().split("@");
+  if (!l || !d) return "";
+  if (d === "gmail.com" || d === "googlemail.com") return `${l.split("+")[0].replace(/\./g, "")}@gmail.com`;
+  return `${l}@${d}`;
+}

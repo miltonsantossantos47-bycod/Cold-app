@@ -1,12 +1,38 @@
 // Planos do Cold: pacotes de trocas por dia. Muda os preços aqui (valores em kwanzas).
-export type PlanoId = "teste" | "basico" | "estudante" | "intensivo" | "piloto";
+export type PlanoId = "teste" | "basico" | "estudante" | "intensivo" | "personalizado" | "piloto";
+
+// ---------- Preços (em kwanzas) ----------
+// Cada troca é vendida a PRECO_TROCA_KZ. Os planos fixos têm um desconto sobre o plano personalizado equivalente.
+export const PRECO_TROCA_KZ = 60;
+export const DESCONTO_PLANOS = 0.3; // 30%
+
+// Limites do plano personalizado
+export const PERSONALIZADO = { trocasMin: 1, trocasMax: 50, diasMin: 1, diasMax: 90 };
+
+export function precoBase(trocasPorDia: number, dias: number): number {
+  return trocasPorDia * dias * PRECO_TROCA_KZ;
+}
+export function precoComDesconto(trocasPorDia: number, dias: number): number {
+  return Math.round(precoBase(trocasPorDia, dias) * (1 - DESCONTO_PLANOS));
+}
+
+// Valida o que a pessoa escolheu no plano personalizado (nunca confiar no navegador).
+export function validarPersonalizado(trocas: unknown, dias: unknown): { trocas: number; dias: number } | null {
+  const t = typeof trocas === "number" ? trocas : Number(trocas);
+  const d = typeof dias === "number" ? dias : Number(dias);
+  if (!Number.isInteger(t) || !Number.isInteger(d)) return null;
+  if (t < PERSONALIZADO.trocasMin || t > PERSONALIZADO.trocasMax) return null;
+  if (d < PERSONALIZADO.diasMin || d > PERSONALIZADO.diasMax) return null;
+  return { trocas: t, dias: d };
+}
 
 export type Plano = {
   id: PlanoId;
   nome: string;
   trocasPorDia: number;
   primeiroDia?: number; // só o teste: trocas no 1.º dia
-  precoKz: number;
+  precoKz: number; // o que a pessoa paga
+  precoOriginalKz?: number; // o que custaria no plano personalizado (para mostrar o desconto)
   dias: number;
   publico: boolean; // aparece na página /pagar
   criavel?: boolean; // false = não aparece no painel para criar (plano interno)
@@ -28,7 +54,8 @@ export const PLANOS: Plano[] = [
     id: "basico",
     nome: "Básico",
     trocasPorDia: 6,
-    precoKz: 6900,
+    precoKz: precoComDesconto(6, 30),
+    precoOriginalKz: precoBase(6, 30),
     dias: 30,
     publico: true,
     descricao: "6 trocas por dia, durante 30 dias.",
@@ -37,20 +64,32 @@ export const PLANOS: Plano[] = [
     id: "estudante",
     nome: "Estudante",
     trocasPorDia: 10,
-    precoKz: 9900,
+    precoKz: precoComDesconto(10, 30),
+    precoOriginalKz: precoBase(10, 30),
     dias: 30,
     publico: true,
     descricao: "10 trocas por dia, durante 30 dias.",
   },
   {
-    // Fica fora da página pública até confirmares o preço (com 20 trocas por dia, o custo da IA pode passar do preço).
     id: "intensivo",
     nome: "Intensivo",
     trocasPorDia: 20,
-    precoKz: 12500,
+    precoKz: precoComDesconto(20, 30),
+    precoOriginalKz: precoBase(20, 30),
     dias: 30,
-    publico: false,
+    publico: true,
     descricao: "20 trocas por dia, durante 30 dias.",
+  },
+  {
+    // O plano que cada pessoa monta (trocas por dia x dias); o limite fica guardado no próprio acesso.
+    id: "personalizado",
+    nome: "Personalizado",
+    trocasPorDia: 0,
+    precoKz: 0,
+    dias: 0,
+    publico: false,
+    criavel: false,
+    descricao: "Plano montado pela própria pessoa.",
   },
   {
     // Códigos do piloto ligados a uma conta: sem validade; o limite diário vem do próprio código.

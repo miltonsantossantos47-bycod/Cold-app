@@ -13,6 +13,8 @@ export type Acesso = {
   ativo: boolean;
   notas: string;
   user_id?: string | null; // conta Google a que o código está ligado
+  email?: string | null; // plano reservado a este email (como foi escrito no painel)
+  email_chave?: string | null; // o mesmo email em forma canónica (para comparar)
   criado_em?: string;
 };
 
@@ -151,4 +153,54 @@ export async function vincularSeLivre(codigo: string, userId: string, patch: Par
   });
   if (!r.ok) throw new Error("Erro a ligar o código à conta na Supabase.");
   return ((await r.json()) as unknown[]).length > 0;
+}
+
+export async function apagarAcesso(codigo: string): Promise<void> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/acessos?codigo=eq.${enc(codigo)}`, {
+    method: "DELETE",
+    headers: { ...cabecalhos(sb.key), Prefer: "return=minimal" },
+  });
+  if (!r.ok) throw new Error("Erro a apagar o acesso na Supabase.");
+}
+
+// Planos reservados a um email e ainda por reclamar (ninguém entrou com esse Google).
+export async function listarReservadosPorEmail(emailChave: string): Promise<Acesso[]> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/acessos?email_chave=eq.${enc(emailChave)}&user_id=is.null&select=*`, {
+    headers: cabecalhos(sb.key),
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error("Erro a ler os planos reservados (já correste o supabase.sql?).");
+  return (await r.json()) as Acesso[];
+}
+
+export async function procurarPorEmail(emailChave: string): Promise<Acesso | null> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/acessos?email_chave=eq.${enc(emailChave)}&select=*&limit=1`, {
+    headers: cabecalhos(sb.key),
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error("Erro a procurar o email (já correste o supabase.sql?).");
+  return ((await r.json()) as Acesso[])[0] ?? null;
+}
+
+export async function apagarPagamento(id: number): Promise<number> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/pagamentos?id=eq.${id}&select=id`, {
+    method: "DELETE",
+    headers: { ...cabecalhos(sb.key), Prefer: "return=representation" },
+  });
+  if (!r.ok) throw new Error("Erro a apagar o pagamento na Supabase.");
+  return ((await r.json()) as unknown[]).length;
+}
+
+export async function apagarTodosPagamentos(): Promise<number> {
+  const sb = cfg();
+  const r = await fetch(`${sb.url}/rest/v1/pagamentos?id=gt.0&select=id`, {
+    method: "DELETE",
+    headers: { ...cabecalhos(sb.key), Prefer: "return=representation" },
+  });
+  if (!r.ok) throw new Error("Erro a limpar os pagamentos na Supabase.");
+  return ((await r.json()) as unknown[]).length;
 }

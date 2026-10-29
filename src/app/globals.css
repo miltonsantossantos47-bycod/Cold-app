@@ -251,3 +251,47 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .divisor { display: flex; align-items: center; gap: 12px; margin: 18px 0 14px; color: var(--text-muted); font-size: 13.5px; }
 .divisor::before, .divisor::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .plano-info .alerta { color: #8a3b3b; }
+.btn-perigo { color: #8a3b3b; border-color: #d8b4b4; }
+.btn-perigo:hover { background: #f8eeee; opacity: 1; }
+
+/* ---------- Pedidos e preços em /pagar ---------- */
+.preco-antigo { text-decoration: line-through; color: var(--text-muted); font-size: 15px; }
+.badge-desc { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #dfeee3; color: #2d6a3d; font-size: 12.5px; font-weight: 600; }
+.plano .btn { margin-top: 12px; }
+.calc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.calc label { display: block; font-size: 13.5px; margin-bottom: 4px; color: var(--text-muted); }
+.calc input { width: 100%; }
+.preco-calc { font-size: 26px; font-weight: 700; margin: 6px 0 2px; }
+.quando { margin: 14px 0 6px; font-size: 14.5px; }
+.quando label { display: block; margin: 4px 0; cursor: pointer; }
+.pedido-ok { border: 1px solid #b9d9c1; background: #f1f8f3; border-radius: 12px; padding: 16px; margin: 18px 0; }
+.pedido-ok .ref { font-size: 24px; font-weight: 700; letter-spacing: .04em; }
+.meus-pedidos { margin-top: 24px; font-size: 14.5px; }
+.meus-pedidos li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--border); list-style: none; }
+.meus-pedidos ul { padding: 0; }
+
+/* ---------- Planos: desconto, personalizado e pedidos ---------- */
+.preco-antigo { font-size: 14px; color: var(--text-muted); margin-top: 6px; }
+.badge-desconto { background: #dfeee3; color: #2d6a3d; border-radius: 999px; padding: 2px 8px; font-size: 12.5px; font-weight: 600; margin-left: 4px; }
+.plano .btn { margin-top: 10px; }
+.plano-pers { background: var(--panel-2); }
+.pedido-ok { margin: 18px 0; border-color: #9fc5a8; }
+.quando { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 18px 0; display: grid; gap: 8px; }
+.quando legend { font-weight: 600; padding: 0 6px; }
+.meus-pedidos { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.meus-pedidos li { display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--panel); }
+.admin-pedidos td, .admin-pedidos th { font-size: 14px; }
+.estado.agendado { background: #e6ecf8; color: #34507a; }
+
+/* ---------- /pagar: descontos, plano personalizado, pedidos ---------- */
+.plano .antes { font-size: 14px; color: var(--text-muted); }
+.plano .antes s { margin-right: 6px; }
+.selo { display: inline-block; background: #dfeee3; color: #2d6a3d; font-weight: 600; font-size: 12.5px; padding: 1px 8px; border-radius: 999px; }
+.plano.personalizado { margin-top: 18px; }
+.plano.personalizado .form-grid { margin-top: 10px; }
+.pedido-criado { margin-top: 20px; border-color: #b9d6c1; background: #f4faf6; }
+.passos-pagar { padding-left: 20px; line-height: 1.7; margin-bottom: 14px; }
+.quando { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 14px 0; }
+.quando legend { font-weight: 600; padding: 0 6px; }
+.quando label { display: block; margin: 6px 0; font-size: 14.5px; }
+.estado.agendado { background: #e4ecf6; color: #35557a; }

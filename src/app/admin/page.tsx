@@ -11,19 +11,46 @@ type AcessoInfo = {
   codigo: string;
   nome: string;
   contacto: string;
+  email?: string | null;
   user_id?: string | null;
   plano: string;
   valido_ate: string | null;
   ativo: boolean;
-  estado: "ativo" | "expirado" | "desativado" | "por iniciar";
+  estado: "ativo" | "expirado" | "desativado" | "por iniciar" | "agendado";
   diasRestantes: number | null;
 };
-type Assinaturas = { planos: PlanoInfo[]; acessos: AcessoInfo[]; receitaKz: number; pagamentos: number };
+type PedidoInfo = {
+  ref: string;
+  nome: string;
+  email: string;
+  tipo: string;
+  trocas_dia: number;
+  dias: number;
+  preco_kz: number;
+  quando: string;
+  criado_em?: string;
+};
+type PagamentoInfo = { id: number; codigo: string; plano: string; valor_kz: number; dias: number; criado_em?: string };
+type Assinaturas = {
+  planos: PlanoInfo[];
+  acessos: AcessoInfo[];
+  receitaKz: number;
+  pagamentos: number;
+  pedidos?: PedidoInfo[];
+  listaPagamentos?: PagamentoInfo[];
+};
+type RespAcao = {
+  codigo?: string;
+  acesso?: AcessoInfo & { valido_ate: string | null; email?: string | null };
+  confirmacao?: { nome: string; plano: string; trocas_dia: number; inicio: string; valido_ate: string };
+};
 
 export default function AdminPage() {
   const [codigo, setCodigo] = useState("");
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
   const [precos, setPrecos] = useState<Precos | null>(null);
+  const [hoje, setHoje] = useState("");
+  const [msgUso, setMsgUso] = useState("");
   const [assin, setAssin] = useState<Assinaturas | null>(null);
   const [erro, setErro] = useState("");
   const [erroAssin, setErroAssin] = useState("");
@@ -33,6 +60,7 @@ export default function AdminPage() {
   // formulário "nova assinatura"
   const [nome, setNome] = useState("");
   const [contacto, setContacto] = useState("");
+  const [emailForm, setEmailForm] = useState("");
   const [planoId, setPlanoId] = useState("estudante");
   const [valor, setValor] = useState("");
   const [mensagem, setMensagem] = useState("");
@@ -55,6 +83,7 @@ export default function AdminPage() {
       if (!ru.ok) throw new Error(du.error ?? "Erro.");
       setLinhas(du.linhas);
       setPrecos(du.precos);
+      setHoje(du.hoje ?? "");
       setEntrou(true);
       const da = await ra.json();
       if (ra.ok) setAssin(da);
@@ -79,7 +108,7 @@ export default function AdminPage() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Erro.");
       setAssin(d);
-      return d as { codigo: string; acesso?: AcessoInfo };
+      return d as RespAcao;
     } catch (err) {
       setErroAssin(err instanceof Error ? err.message : "Erro de ligação.");
       return null;
@@ -88,16 +117,89 @@ export default function AdminPage() {
     }
   }
 
-  function textoConvite(c: string, n: string, plano: PlanoInfo, validoAte: string | null) {
+  async function recarregarUso() {
+    const r = await fetch("/api/uso", { headers: { "x-codigo": codigo.trim() } });
+    const d = await r.json();
+    if (r.ok) {
+      setLinhas(d.linhas);
+      setPrecos(d.precos);
+      setHoje(d.hoje ?? "");
+    }
+  }
+
+  async function confirmarPedido(p: PedidoInfo) {
+    const v = window.prompt(`Valor recebido em Kz (pedido ${p.ref} de ${p.nome}):`, String(p.preco_kz));
+    if (v === null) return;
+    const d = await acao({ acao: "confirmar-pedido", ref: p.ref, valorKz: v.trim() });
+    if (d?.confirmacao) {
+      const c = d.confirmacao;
+      setMensagem(
+        `Olá ${c.nome}! O teu pagamento foi confirmado ✅\nPlano ${c.plano}: ${c.trocas_dia} trocas por dia, de ${formatarData(c.inicio)} a ${formatarData(c.valido_ate)}.\nEntra em ${window.location.origin}/app com o teu Google: o plano já está na tua conta. Bons estudos! 📚`
+      );
+      setCopiado(false);
+    }
+  }
+
+  async function cancelarPedido(p: PedidoInfo) {
+    if (!window.confirm(`Cancelar o pedido ${p.ref} de ${p.nome}?`)) return;
+    await acao({ acao: "cancelar-pedido", ref: p.ref });
+  }
+
+  async function apagarPagamento(p: PagamentoInfo) {
+    if (!window.confirm(`Apagar o pagamento de ${formatarKz(p.valor_kz)} (${p.codigo})? O total recebido diminui.`)) return;
+    await acao({ acao: "apagar-pagamento", id: p.id });
+  }
+
+  async function limparPagamentos() {
+    if (
+      !window.confirm(
+        "Apagar TODOS os registos de pagamentos? O «recebido» e o número de pagamentos ficam a zero. As assinaturas não são afetadas. Não dá para desfazer."
+      )
+    )
+      return;
+    await acao({ acao: "limpar-pagamentos" });
+  }
+
+  async function apagar(a: AcessoInfo) {
+    if (a.ativo) return;
+    if (!window.confirm(`Apagar para sempre o acesso ${a.codigo} (${a.nome})? Não dá para desfazer. Os pagamentos registados ficam no total recebido.`)) return;
+    await acao({ acao: "apagar", codigo: a.codigo });
+  }
+
+  async function limparUso(filtro: { codigo?: string; dia?: string }) {
+    const quais = filtro.dia
+      ? `o uso de ${filtro.codigo} em ${filtro.dia}`
+      : "todo o histórico de uso dos dias anteriores a hoje (o de hoje fica, para os limites diários não voltarem a zero)";
+    const aviso = filtro.dia
+      ? ""
+      : " O custo total e o custo por troca deixam de contar esses dias. Se quiseres guardar os números, tira uma captura antes.";
+    if (!window.confirm(`Limpar ${quais}?${aviso} Não dá para desfazer.`)) return;
+    setErroAssin("");
+    setMsgUso("");
+    try {
+      const r = await fetch("/api/uso", { method: "POST", headers: cab, body: JSON.stringify({ acao: "limpar", ...filtro }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Erro.");
+      setMsgUso(d.apagadas === 1 ? "Foi apagada 1 linha de uso." : `Foram apagadas ${d.apagadas} linhas de uso.`);
+      await recarregarUso();
+    } catch (err) {
+      setMsgUso(err instanceof Error ? err.message : "Erro de ligação.");
+    }
+  }
+
+  function textoConvite(c: string, n: string, plano: PlanoInfo, validoAte: string | null, email?: string | null) {
     const quando =
       plano.id === "teste"
         ? `O teu teste grátis dura ${plano.dias} dias e começa no primeiro uso.`
         : `A tua assinatura está ativa até ${formatarData(validoAte)}.`;
+    const entrada = email
+      ? [`📧 Entra com o Google usando este email: ${email}`, "O teu plano aparece sozinho, não precisas de código."]
+      : [`🔑 O teu código: ${c}`];
     return [
       `Olá ${n}! 👋 Bem-vindo(a) ao Cold (plano ${plano.nome}).`,
       "",
       `🔗 ${window.location.origin}/app`,
-      `🔑 O teu código: ${c}`,
+      ...entrada,
       "",
       `${quando} Tens ${plano.trocasPorDia} trocas por dia${plano.id === "teste" ? " (8 no primeiro dia)" : ""}.`,
       "Abre o link no Chrome ou no Safari e, no menu ☰, toca em «Instalar no telemóvel».",
@@ -108,11 +210,12 @@ export default function AdminPage() {
     e.preventDefault();
     const plano = assin?.planos.find((p) => p.id === planoId);
     if (!plano) return;
-    const d = await acao({ acao: "criar", nome, contacto, plano: planoId, valorKz: valor === "" ? undefined : valor });
+    const d = await acao({ acao: "criar", nome, contacto, email: emailForm.trim() || undefined, plano: planoId, valorKz: valor === "" ? undefined : valor });
     if (d?.acesso) {
-      setMensagem(textoConvite(d.codigo, nome.trim(), plano, d.acesso.valido_ate));
+      setMensagem(textoConvite(d.codigo ?? "", nome.trim(), plano, d.acesso.valido_ate, d.acesso.email));
       setNome("");
       setContacto("");
+      setEmailForm("");
       setValor("");
       setCopiado(false);
     }
@@ -194,11 +297,112 @@ export default function AdminPage() {
                 <div><strong>{assin.pagamentos}</strong><span>pagamentos</span></div>
               </div>
 
-              <h3 style={{ marginTop: 22 }}>Nova assinatura</h3>
+              <h3 style={{ marginTop: 22 }}>Pedidos por confirmar</h3>
+              {(assin.pedidos ?? []).length === 0 ? (
+                <p className="muted">Nenhum pedido pendente.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Referência</th>
+                        <th>Pessoa</th>
+                        <th>Plano pedido</th>
+                        <th>Preço</th>
+                        <th>Começa</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(assin.pedidos ?? []).map((p) => (
+                        <tr key={p.ref}>
+                          <td>{p.ref}</td>
+                          <td>
+                            {p.nome}
+                            <div className="muted" style={{ fontSize: 12.5 }}>{p.email}</div>
+                          </td>
+                          <td>
+                            {p.tipo === "personalizado" ? "Personalizado" : assin.planos.find((x) => x.id === p.tipo)?.nome ?? p.tipo}
+                            <div className="muted" style={{ fontSize: 12.5 }}>
+                              {p.trocas_dia} trocas/dia × {p.dias} dias
+                            </div>
+                          </td>
+                          <td>{formatarKz(p.preco_kz)}</td>
+                          <td>{p.quando === "agora" ? "agora" : "depois do atual"}</td>
+                          <td>
+                            <div className="acoes">
+                              <button className="btn" type="button" onClick={() => confirmarPedido(p)} disabled={aGuardar}>
+                                Confirmar pagamento
+                              </button>
+                              <button className="btn btn-ghost btn-perigo" type="button" onClick={() => cancelarPedido(p)} disabled={aGuardar}>
+                                Cancelar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <h3 style={{ marginTop: 26 }}>Pagamentos registados</h3>
+              {(assin.listaPagamentos ?? []).length === 0 ? (
+                <p className="muted">Nenhum pagamento registado.</p>
+              ) : (
+                <>
+                  <p style={{ marginBottom: 10 }}>
+                    <button className="btn btn-ghost btn-perigo" type="button" onClick={limparPagamentos} disabled={aGuardar}>
+                      Limpar todos os pagamentos
+                    </button>
+                    <span className="muted" style={{ marginLeft: 10, fontSize: 13 }}>
+                      Útil para tirar os de teste. Zera o «recebido».
+                    </span>
+                  </p>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Código</th>
+                          <th>Plano</th>
+                          <th>Valor</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(assin.listaPagamentos ?? []).map((p) => (
+                          <tr key={p.id}>
+                            <td>{p.criado_em ? p.criado_em.slice(0, 10) : ""}</td>
+                            <td>{p.codigo}</td>
+                            <td>{assin.planos.find((x) => x.id === p.plano)?.nome ?? p.plano}</td>
+                            <td>{formatarKz(p.valor_kz)}</td>
+                            <td>
+                              <button className="btn btn-ghost btn-perigo" type="button" onClick={() => apagarPagamento(p)} disabled={aGuardar}>
+                                Apagar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              <h3 style={{ marginTop: 26 }}>Nova assinatura</h3>
               <form onSubmit={criar}>
                 <div className="form-grid">
                   <input required placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={80} aria-label="Nome" />
                   <input placeholder="Contacto (WhatsApp)" value={contacto} onChange={(e) => setContacto(e.target.value)} maxLength={40} aria-label="Contacto" />
+                  <input
+                    type="email"
+                    placeholder="Email do Gmail (opcional)"
+                    value={emailForm}
+                    onChange={(e) => setEmailForm(e.target.value)}
+                    maxLength={120}
+                    aria-label="Email do Gmail"
+                  />
                   <select value={planoId} onChange={(e) => setPlanoId(e.target.value)} aria-label="Plano">
                     {assin.planos.filter((p) => p.criavel !== false).map((p) => (
                       <option key={p.id} value={p.id}>
@@ -214,6 +418,9 @@ export default function AdminPage() {
                     aria-label="Valor recebido"
                   />
                 </div>
+                <p className="muted" style={{ fontSize: 13, margin: "0 0 10px" }}>
+                  Com o email do Gmail, o plano aparece sozinho quando a pessoa entra com esse Google (sem código). Sem email, é por código.
+                </p>
                 <button className="btn" type="submit" disabled={aGuardar}>
                   {aGuardar ? "A guardar…" : "Criar e gerar mensagem"}
                 </button>
@@ -253,7 +460,11 @@ export default function AdminPage() {
                           </td>
                           <td>
                             {a.codigo}
-                            {a.user_id ? <div className="muted" style={{ fontSize: 12.5 }}>ligado a conta Google</div> : null}
+                            {a.user_id ? (
+                              <div className="muted" style={{ fontSize: 12.5 }}>ligado a conta Google</div>
+                            ) : a.email ? (
+                              <div className="muted" style={{ fontSize: 12.5 }}>reservado para {a.email}</div>
+                            ) : null}
                           </td>
                           <td>{assin.planos.find((p) => p.id === a.plano)?.nome ?? a.plano}</td>
                           <td>{a.valido_ate ? formatarData(a.valido_ate) : "—"}</td>
@@ -271,6 +482,11 @@ export default function AdminPage() {
                               <button className="btn btn-ghost" onClick={() => alternar(a)} disabled={aGuardar}>
                                 {a.ativo ? "Desativar" : "Reativar"}
                               </button>
+                              {!a.ativo && (
+                                <button className="btn btn-ghost btn-perigo" onClick={() => apagar(a)} disabled={aGuardar}>
+                                  Apagar
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -287,6 +503,15 @@ export default function AdminPage() {
       {linhas && (
         <section className="admin-sec">
           <h2>Uso</h2>
+          <p style={{ marginBottom: 12 }}>
+            <button className="btn btn-ghost btn-perigo" type="button" onClick={() => limparUso({})}>
+              Limpar histórico
+            </button>
+            <span className="muted" style={{ marginLeft: 10, fontSize: 13 }}>
+              Apaga os dias anteriores a hoje. O de hoje fica.
+            </span>
+          </p>
+          {msgUso && <p className="muted" role="status">{msgUso}</p>}
           <div className="summary">
             <div><strong>{totalTrocas}</strong><span>trocas</span></div>
             <div><strong>{codigosAtivos}</strong><span>pessoas ativas</span></div>
@@ -310,6 +535,7 @@ export default function AdminPage() {
                     <th>Tokens (entrada)</th>
                     <th>Tokens (saída)</th>
                     <th>Custo (US$)</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -321,6 +547,13 @@ export default function AdminPage() {
                       <td>{l.tokens_in.toLocaleString("pt-PT")}</td>
                       <td>{l.tokens_out.toLocaleString("pt-PT")}</td>
                       <td>{custo(l).toFixed(3)}</td>
+                      <td>
+                        {hoje && l.dia < hoje ? (
+                          <button className="btn btn-ghost btn-perigo" type="button" onClick={() => limparUso({ codigo: l.codigo, dia: l.dia })}>
+                            Apagar
+                          </button>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
