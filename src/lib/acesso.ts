@@ -18,6 +18,8 @@ export function normalizarCodigo(c: unknown): string {
 // CODIGOS_ACESSO aceita "CODIGO" (usa o LIMITE_DIARIO geral) ou "CODIGO:15" (limite próprio desse código).
 function codigosNormais(): Map<string, number | null> {
   const mapa = new Map<string, number | null>();
+  // Os códigos antigos (COLD-XXXXX) estão desligados. Só voltam a funcionar com CODIGOS_ANTIGOS_ATIVOS=sim.
+  if ((process.env.CODIGOS_ANTIGOS_ATIVOS ?? "").trim().toLowerCase() !== "sim") return mapa;
   for (const item of lista(process.env.CODIGOS_ACESSO)) {
     const [cod, lim] = item.split(":");
     const n = lim !== undefined ? parseInt(lim, 10) : NaN;
