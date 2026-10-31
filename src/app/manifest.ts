@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/app",
     name: "Cold — The Learning Operating System",
     short_name: "Cold",
-    description: "O teu tutor de Matemática e Física, à tua medida.",
+    description: "O teu tutor para qualquer área, à tua medida.",
     start_url: "/app",
     scope: "/",
     display: "standalone",

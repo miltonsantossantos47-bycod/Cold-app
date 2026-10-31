@@ -25,13 +25,15 @@ type Perfil = {
 export const maxDuration = 60;
 
 const MAX_CARACTERES_MENSAGEM = 4000;
+const MAX_CARACTERES_AREA = 80;
+const MAX_CARACTERES_ESTADO = 50; // as 5 dificuldades recentes têm de caber nos 300 caracteres do perfil
 
 const NOTA_FORMATO = `
 
 ## Formato de escrita (o ecrã mostra só texto simples)
 - Não uses LaTeX nem $...$. Escreve fórmulas em texto simples (ex.: v = Δx / Δt, x^2).
 - Podes usar **negrito**, listas com "-" e blocos de código (três crases) para diagramas ASCII e tabelas.
-- Na linha [[ESTADO: ...]] usa os ids do currículo (ex.: mat-2-1). Se ainda não escolheste lição, usa a mais adequada ao diagnóstico.
+- Na linha [[ESTADO: ...]] usa os ids do currículo (ex.: mat-1.2.1), ou os títulos curtos se a área não tiver ids. Se ainda não escolheste lição, usa a mais adequada ao diagnóstico.
 - Se o perfil tiver um nome, trata o aluno por esse nome de vez em quando (por exemplo ao cumprimentar ou ao reconhecer um acerto), com naturalidade e sem exagerar.`;
 
 function limparMensagens(raw: unknown): Msg[] {
@@ -80,7 +82,17 @@ function lerEstado(texto: string): { modulo?: string; licao?: string; dominio?: 
     if (i === -1) continue;
     estado[semAcentos(par.slice(0, i).trim())] = par.slice(i + 1).trim();
   }
-  return { modulo: estado["modulo"], licao: estado["licao"], dominio: estado["dominio"] };
+  return {
+    modulo: estado["modulo"]?.slice(0, MAX_CARACTERES_ESTADO),
+    licao: estado["licao"]?.slice(0, MAX_CARACTERES_ESTADO),
+    dominio: estado["dominio"],
+  };
+}
+
+// A área pode ser escrita pelo aluno, por isso vai limpa e curta para o prompt.
+function limparArea(area: unknown): string | undefined {
+  if (typeof area !== "string") return undefined;
+  return area.replace(/\s+/g, " ").trim().slice(0, MAX_CARACTERES_AREA) || undefined;
 }
 
 export async function POST(req: Request) {
@@ -156,6 +168,7 @@ export async function POST(req: Request) {
   // O nome vem do servidor (da assinatura/conta); ignora qualquer "nome" que o navegador mande.
   const perfil: Perfil = {
     ...(body.perfil ?? {}),
+    area: limparArea(body.perfil?.area),
     nome: primeiroNome(acesso.tipo === "normal" ? acesso.nome : "") || undefined,
   };
   const system =

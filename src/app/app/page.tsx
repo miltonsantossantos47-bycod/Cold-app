@@ -49,7 +49,23 @@ const CODIGO_KEY = "cold:codigo";
 const chatsKey = (codigo: string) => `cold:chats:${codigo}`;
 const ativoKey = (codigo: string) => `cold:ativo:${codigo}`;
 const PRIMEIRA_MENSAGEM = "Olá! Estou pronto para começar.";
-const AREAS = ["Matemática", "Física"];
+const AREAS = [
+  "Matemática",
+  "Física",
+  "Química",
+  "Biologia",
+  "Língua Portuguesa",
+  "Inglês",
+  "Francês",
+  "História",
+  "Geografia",
+  "Filosofia",
+  "Economia",
+  "Contabilidade",
+  "Direito",
+  "Programação",
+];
+const OUTRA_AREA = "__outra__";
 const GRUPOS = ["Hoje", "Ontem", "Últimos 7 dias", "Mais antigos"];
 
 // Níveis académicos (escolha em lista, para o aluno não ter de escrever).
@@ -67,7 +83,7 @@ const OBJETIVOS = [
   "Acompanhar a matéria das aulas",
   "Passar numa prova ou exame",
   "Preparar-me para o exame de acesso à universidade",
-  "Preparar-me para Engenharia",
+  "Preparar-me para um curso ou profissão",
   "Recuperar as bases que me faltam",
   "Aprender por interesse",
 ];
@@ -243,7 +259,8 @@ export default function ChatPage() {
   const [aVerificar, setAVerificar] = useState(false);
 
   // formulário inicial / novo chat
-  const [area, setArea] = useState("Matemática");
+  const [area, setArea] = useState("Matemática"); // OUTRA_AREA = escrever
+  const [areaOutra, setAreaOutra] = useState("");
   const [temaSel, setTemaSel] = useState(""); // "" = sem tema (o Cold sugere), OUTRO_TEMA = escrever
   const [temaOutro, setTemaOutro] = useState("");
   const [nivel, setNivel] = useState("");
@@ -783,7 +800,7 @@ export default function ChatPage() {
   function comecar(e: React.FormEvent) {
     e.preventDefault();
     const novo: Perfil = {
-      area,
+      area: (area === OUTRA_AREA ? areaOutra : area).trim(),
       nivel_atual: nivel.trim(),
       objetivo: (objSel === OUTRO_OBJ ? objOutro : objSel).trim(),
       ritmo_semanal: ritmo.trim(),
@@ -928,7 +945,7 @@ export default function ChatPage() {
                 + Novo chat
               </button>
               <div className="filters">
-                {["Todas", ...AREAS].map((f) => (
+                {["Todas", ...Array.from(new Set(chats.map((c) => c.perfil.area)))].map((f) => (
                   <button
                     key={f}
                     className={`filter${filtro === f ? " ativo" : ""}`}
@@ -1139,7 +1156,20 @@ export default function ChatPage() {
                     {AREAS.map((a) => (
                       <option key={a}>{a}</option>
                     ))}
+                    <option value={OUTRA_AREA}>Outra área (escrever)</option>
                   </select>
+                  {area === OUTRA_AREA && (
+                    <input
+                      id="area-outra"
+                      aria-label="Escreve a tua área"
+                      style={{ marginTop: 8 }}
+                      required
+                      value={areaOutra}
+                      onChange={(e) => setAreaOutra(e.target.value)}
+                      maxLength={80}
+                      placeholder="ex.: Enfermagem, Sociologia, Mandarim"
+                    />
+                  )}
                 </div>
                 <div className="field">
                   <label htmlFor="tema">Que tema queres estudar?</label>
@@ -1164,7 +1194,7 @@ export default function ChatPage() {
                       value={temaOutro}
                       onChange={(e) => setTemaOutro(e.target.value)}
                       maxLength={200}
-                      placeholder="ex.: equações do 2.º grau, ou leis de Newton"
+                      placeholder="ex.: equações do 2.º grau, ou a Revolução Francesa"
                     />
                   )}
                 </div>
