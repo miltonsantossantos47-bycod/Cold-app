@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { SYSTEM_PROMPT } from "../../../lib/system-prompt";
-import { curriculoParaPrompt } from "../../../lib/curriculo";
+import { areaDisponivel, curriculoParaPrompt } from "../../../lib/curriculo";
 import { haCodigosConfigurados, hojeEmLuanda, normalizarCodigo } from "../../../lib/acesso";
 import { temSupabase } from "../../../lib/acessos";
 import { resolverPedido } from "../../../lib/assinatura";
@@ -139,6 +139,11 @@ export async function POST(req: Request) {
       { error: `A mensagem é demasiado longa (máximo ${MAX_CARACTERES_MENSAGEM} caracteres).` },
       { status: 400 }
     );
+  }
+
+  // A escolha de área também é controlada aqui, para não depender só do formulário.
+  if (!areaDisponivel(limparArea(body.perfil?.area))) {
+    return NextResponse.json({ error: "Por agora o Cold ensina só Matemática e Física." }, { status: 400 });
   }
 
   // 2) Ainda tem trocas disponíveis hoje?

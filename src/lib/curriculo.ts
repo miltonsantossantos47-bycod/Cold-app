@@ -165,8 +165,32 @@ export const CURRICULO: Area[] = [
   },
 ];
 
+// Para ativar as outras \u00e1reas e a op\u00e7\u00e3o "Outra \u00e1rea (escrever)", basta p\u00f4r isto a true.
+export const OUTRAS_AREAS_ATIVAS = false;
+
+const AREAS_COM_CURRICULO = CURRICULO.map((a) => a.area);
+const AREAS_DESATIVADAS = [
+  "Qu\u00edmica",
+  "Biologia",
+  "L\u00edngua Portuguesa",
+  "Ingl\u00eas",
+  "Franc\u00eas",
+  "Hist\u00f3ria",
+  "Geografia",
+  "Filosofia",
+  "Economia",
+  "Contabilidade",
+  "Direito",
+  "Programa\u00e7\u00e3o",
+];
+export const AREAS = OUTRAS_AREAS_ATIVAS ? [...AREAS_COM_CURRICULO, ...AREAS_DESATIVADAS] : AREAS_COM_CURRICULO;
+
 function semAcentos(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+export function areaDisponivel(nomeArea?: string): boolean {
+  return OUTRAS_AREAS_ATIVAS || AREAS_COM_CURRICULO.some((a) => semAcentos(a) === semAcentos(nomeArea ?? ""));
 }
 
 // Áreas sem currículo escrito: o método é o mesmo, só o percurso é construído pelo modelo.

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CURRICULO } from "../../lib/curriculo";
+import { AREAS, CURRICULO, OUTRAS_AREAS_ATIVAS } from "../../lib/curriculo";
 import { formatarData } from "../../lib/planos";
 import {
   CONTAS_ATIVAS,
@@ -49,22 +49,6 @@ const CODIGO_KEY = "cold:codigo";
 const chatsKey = (codigo: string) => `cold:chats:${codigo}`;
 const ativoKey = (codigo: string) => `cold:ativo:${codigo}`;
 const PRIMEIRA_MENSAGEM = "Olá! Estou pronto para começar.";
-const AREAS = [
-  "Matemática",
-  "Física",
-  "Química",
-  "Biologia",
-  "Língua Portuguesa",
-  "Inglês",
-  "Francês",
-  "História",
-  "Geografia",
-  "Filosofia",
-  "Economia",
-  "Contabilidade",
-  "Direito",
-  "Programação",
-];
 const OUTRA_AREA = "__outra__";
 const GRUPOS = ["Hoje", "Ontem", "Últimos 7 dias", "Mais antigos"];
 
@@ -83,7 +67,7 @@ const OBJETIVOS = [
   "Acompanhar a matéria das aulas",
   "Passar numa prova ou exame",
   "Preparar-me para o exame de acesso à universidade",
-  "Preparar-me para um curso ou profissão",
+  "Preparar-me para Engenharia",
   "Recuperar as bases que me faltam",
   "Aprender por interesse",
 ];
@@ -1156,7 +1140,7 @@ export default function ChatPage() {
                     {AREAS.map((a) => (
                       <option key={a}>{a}</option>
                     ))}
-                    <option value={OUTRA_AREA}>Outra área (escrever)</option>
+                    {OUTRAS_AREAS_ATIVAS && <option value={OUTRA_AREA}>Outra área (escrever)</option>}
                   </select>
                   {area === OUTRA_AREA && (
                     <input
@@ -1194,7 +1178,7 @@ export default function ChatPage() {
                       value={temaOutro}
                       onChange={(e) => setTemaOutro(e.target.value)}
                       maxLength={200}
-                      placeholder="ex.: equações do 2.º grau, ou a Revolução Francesa"
+                      placeholder="ex.: equações do 2.º grau, ou leis de Newton"
                     />
                   )}
                 </div>
