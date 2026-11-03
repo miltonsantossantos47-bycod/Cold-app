@@ -17,6 +17,18 @@ import {
 import { assinaturaChat, decidirSync } from "../../lib/sync-chats";
 import InstalarApp from "./instalar";
 
+type FimResposta = {
+  reply: string;
+  estado?: Estado | null;
+  restantes?: number | null;
+  limite?: number | null;
+};
+
+// Pedido interno (nunca aparece ao aluno) para continuar uma resposta que ficou a meio.
+const PEDIDO_CONTINUAR =
+  "Continua a tua resposta anterior exatamente de onde parou, sem repetir nada e sem introdução. " +
+  "Se tiver parado a meio de uma palavra, escreve só o resto dessa palavra.";
+
 type Msg = { role: "user" | "assistant"; content: string; hidden?: boolean };
 
 type Perfil = {
@@ -125,7 +137,12 @@ function grupoDe(ts: number): string {
 // Quem faz o pedido: a conta Google (token) ou um código.
 type Quem = { tipo: "conta" } | { tipo: "codigo"; codigo: string };
 
-async function chamar(url: string, quem: Quem, corpo: Record<string, unknown> = {}): Promise<Response> {
+async function chamar(
+  url: string,
+  quem: Quem,
+  corpo: Record<string, unknown> = {},
+  signal?: AbortSignal
+): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const body: Record<string, unknown> = { ...corpo };
   if (quem.tipo === "conta") {
@@ -135,7 +152,7 @@ async function chamar(url: string, quem: Quem, corpo: Record<string, unknown> = 
   } else {
     body.codigo = quem.codigo;
   }
-  return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  return fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal });
 }
 
 // /api/chats: sem corpo = GET; com corpo = POST (guardar/apagar). Precisa de sessão.
@@ -236,6 +253,11 @@ export default function ChatPage() {
   const [carregandoId, setCarregandoId] = useState<string | null>(null);
   const [erro, setErro] = useState<{ id: string; msg: string } | null>(null);
   const fim = useRef<HTMLDivElement>(null);
+  // texto da resposta que está a chegar (só vai para o chat quando termina ou é interrompida)
+  const [parcial, setParcial] = useState<{ id: string; texto: string } | null>(null);
+  // chat cuja última resposta ficou a meio (rede, erro ou botão Parar)
+  const [incompletaId, setIncompletaId] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // código de acesso
   const [codigoInput, setCodigoInput] = useState("");
@@ -566,7 +588,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     fim.current?.scrollIntoView?.({ behavior: "smooth" });
-  }, [chat?.msgs, carregandoId, ativoId]);
+  }, [chat?.msgs, carregandoId, ativoId, parcial?.texto]);
 
   function atualizarChat(id: string, fn: (c: Chat) => Chat) {
     setChats((prev) => prev.map((c) => (c.id === id ? fn(c) : c)));
@@ -710,16 +732,30 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conta, semPlano]);
 
-  async function pedirResposta(historico: Msg[], perfilAtual: Perfil, chatId: string) {
+  // estenderIdx: posição da resposta incompleta a que se junta o texto novo (botão Continuar).
+  async function pedirResposta(historico: Msg[], perfilAtual: Perfil, chatId: string, estenderIdx?: number) {
     setErro(null);
+    setIncompletaId(null);
+    setParcial(null);
     setCarregandoId(chatId);
+    const ac = new AbortController();
+    abortRef.current = ac;
     try {
       const quem = quemAtual();
       if (!quem) throw new Error("Entra primeiro com o teu Google ou o teu código.");
-      const res = await chamar("/api/chat", quem, {
-        messages: historico.map((m) => ({ role: m.role, content: m.content })),
-        perfil: perfilAtual,
-      });
+      const res = await chamar(
+        "/api/chat",
+        quem,
+        {
+          messages: historico.map((m) => ({ role: m.role, content: m.content })),
+          perfil: perfilAtual,
+        },
+        ac.signal
+      );
+      if (res.ok && (res.headers.get("content-type") ?? "").includes("ndjson")) {
+        await lerResposta(res, historico, chatId, estenderIdx, quem);
+        return;
+      }
       const data = await res.json();
       if (res.status === 401 && data.sessaoInvalida) {
         limparSessaoLocal();
@@ -764,10 +800,101 @@ export default function ChatPage() {
         atualizarChat(chatId, (c) => ({ ...c, perfil: atualizarPerfil(c.perfil, data.estado) }));
       }
     } catch (e) {
-      setErro({ id: chatId, msg: e instanceof Error ? e.message : "Erro de ligação." });
+      const parou = ac.signal.aborted;
+      setErro({
+        id: chatId,
+        msg: parou ? "Interrompeste a resposta." : e instanceof Error ? e.message : "Erro de ligação.",
+      });
     } finally {
+      setParcial(null);
       setCarregandoId(null);
+      abortRef.current = null;
     }
+  }
+
+  // Lê a resposta do servidor à medida que chega (uma linha JSON por pedaço). Só é "concluída" com o evento final.
+  async function lerResposta(res: Response, historico: Msg[], chatId: string, estenderIdx: number | undefined, quem: Quem) {
+    const leitor = res.body?.getReader();
+    if (!leitor) throw new Error("A resposta veio vazia. Tenta de novo.");
+    const dec = new TextDecoder();
+    let resto = "";
+    let texto = "";
+    let erroServidor = "";
+    let final: FimResposta | null = null;
+
+    const juntar = (novo: string): Msg[] =>
+      estenderIdx === undefined
+        ? [...historico, { role: "assistant", content: novo }]
+        : [...historico.slice(0, estenderIdx), { ...historico[estenderIdx], content: historico[estenderIdx].content + novo }];
+
+    try {
+      for (;;) {
+        const { done, value } = await leitor.read();
+        if (done) break;
+        resto += dec.decode(value, { stream: true });
+        let i: number;
+        while ((i = resto.indexOf("\n")) !== -1) {
+          const linha = resto.slice(0, i).trim();
+          resto = resto.slice(i + 1);
+          if (!linha) continue;
+          let ev: { t?: string; d?: string; parcial?: string } & Partial<FimResposta>;
+          try {
+            ev = JSON.parse(linha);
+          } catch {
+            continue;
+          }
+          if (ev.t === "texto" && typeof ev.d === "string") {
+            texto += ev.d;
+            setParcial({ id: chatId, texto });
+          } else if (ev.t === "fim" && typeof ev.reply === "string") {
+            final = { reply: ev.reply, estado: ev.estado, restantes: ev.restantes, limite: ev.limite };
+          } else if (ev.t === "erro") {
+            erroServidor = ev.d ?? "";
+            if (typeof ev.parcial === "string" && ev.parcial.length > texto.length) texto = ev.parcial;
+          }
+        }
+      }
+    } catch {
+      /* corte de rede ou botão Parar: tratado abaixo, pela falta do evento final */
+    }
+    setParcial(null);
+
+    if (final) {
+      atualizarChat(chatId, (c) => ({ ...c, msgs: juntar(final!.reply), atualizado: Date.now() }));
+      if (final.estado) {
+        atualizarChat(chatId, (c) => ({ ...c, perfil: atualizarPerfil(c.perfil, final!.estado!) }));
+      }
+      if (final.restantes !== undefined) {
+        setRestantes(final.restantes);
+        setLimite(final.limite ?? null);
+        setLimiteOk(true);
+        setErroLimite("");
+      }
+      return;
+    }
+
+    // Sem evento final: a resposta nunca é dada como concluída.
+    if (texto.trim()) {
+      atualizarChat(chatId, (c) => ({ ...c, msgs: juntar(texto), atualizado: Date.now() }));
+      setIncompletaId(chatId);
+      if (erroServidor) setErro({ id: chatId, msg: erroServidor });
+      void atualizarLimite(quem); // o servidor pode já ter contado esta troca
+      return;
+    }
+    throw new Error(erroServidor || "A resposta foi interrompida antes de chegar. Tenta de novo.");
+  }
+
+  function parar() {
+    abortRef.current?.abort();
+  }
+
+  function continuarResposta() {
+    if (!chat || !perfil || carregandoId || restantes === 0) return;
+    const base = chat.msgs;
+    const idx = base.length - 1;
+    if (idx < 0 || base[idx].role !== "assistant") return;
+    const historico: Msg[] = [...base, { role: "user", content: PEDIDO_CONTINUAR, hidden: true }];
+    void pedirResposta(historico, perfil, chat.id, idx);
   }
 
   function enviar(conteudo: string, chatId: string, perfilAtual: Perfil, historico: Msg[], oculta = false) {
@@ -1256,7 +1383,14 @@ export default function ChatPage() {
                         </div>
                       </div>
                     ))}
-                  {aPensar && (
+                  {parcial && parcial.id === ativoId && parcial.texto && (
+                    <div className="row assistant">
+                      <div className="bubble assistant">
+                        <Conteudo texto={parcial.texto} />
+                      </div>
+                    </div>
+                  )}
+                  {aPensar && !(parcial && parcial.id === ativoId && parcial.texto) && (
                     <div className="thinking" role="status" aria-live="polite">
                       <span className="dots" aria-hidden="true">
                         <i />
@@ -1264,6 +1398,14 @@ export default function ChatPage() {
                         <i />
                       </span>
                       <span className="pensar-texto">O Cold está a pensar…</span>
+                    </div>
+                  )}
+                  {incompletaId === ativoId && !aPensar && (
+                    <div className="aviso" role="status">
+                      A resposta ficou incompleta.{" "}
+                      <button className="btn btn-ghost" type="button" onClick={continuarResposta} disabled={restantes === 0}>
+                        Continuar
+                      </button>
                     </div>
                   )}
                   {erroAtivo && (
@@ -1323,9 +1465,15 @@ export default function ChatPage() {
                       }
                     }}
                   />
-                  <button className="btn" onClick={submeter} disabled={carregandoId !== null || bloqueado || !texto.trim()}>
-                    Enviar
-                  </button>
+                  {aPensar ? (
+                    <button className="btn btn-ghost" type="button" onClick={parar}>
+                      Parar
+                    </button>
+                  ) : (
+                    <button className="btn" onClick={submeter} disabled={carregandoId !== null || bloqueado || !texto.trim()}>
+                      Enviar
+                    </button>
+                  )}
                 </div>
               </div>
             </>

@@ -5,7 +5,13 @@ import { apagarUso, erroDeArmazenamento, listarUso } from "../../../lib/uso";
 export const dynamic = "force-dynamic";
 
 // Preços em dólares por milhão de tokens (Sonnet 5.5). Confirma na página de preços da Anthropic.
-const PRECOS = { entrada_usd_por_milhao: 2, saida_usd_por_milhao: 10 };
+const PRECOS = {
+  entrada_usd_por_milhao: 2,
+  saida_usd_por_milhao: 10,
+  escrita_5m_usd_por_milhao: 2.5,
+  escrita_1h_usd_por_milhao: 4,
+  leitura_usd_por_milhao: 0.1,
+};
 
 function admin(req: Request): boolean {
   // Só os códigos "ilimitados" (os teus) podem ver e limpar o uso.

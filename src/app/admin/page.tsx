@@ -4,8 +4,23 @@ import { useState } from "react";
 import Link from "next/link";
 import { formatarData, formatarKz } from "../../lib/planos";
 
-type Linha = { codigo: string; dia: string; trocas: number; tokens_in: number; tokens_out: number };
-type Precos = { entrada_usd_por_milhao: number; saida_usd_por_milhao: number };
+type Linha = {
+  codigo: string;
+  dia: string;
+  trocas: number;
+  tokens_in: number;
+  tokens_out: number;
+  cache_escrita_5m: number;
+  cache_escrita_1h: number;
+  cache_leitura: number;
+};
+type Precos = {
+  entrada_usd_por_milhao: number;
+  saida_usd_por_milhao: number;
+  escrita_5m_usd_por_milhao: number;
+  escrita_1h_usd_por_milhao: number;
+  leitura_usd_por_milhao: number;
+};
 type PlanoInfo = { id: string; nome: string; trocasPorDia: number; precoKz: number; dias: number; publico: boolean; criavel?: boolean };
 type AcessoInfo = {
   codigo: string;
@@ -248,8 +263,15 @@ export default function AdminPage() {
     }
   }
 
-  const custo = (l: { tokens_in: number; tokens_out: number }) =>
-    precos ? (l.tokens_in * precos.entrada_usd_por_milhao + l.tokens_out * precos.saida_usd_por_milhao) / 1_000_000 : 0;
+  const custo = (l: Linha) =>
+    precos
+      ? (l.tokens_in * precos.entrada_usd_por_milhao +
+          l.tokens_out * precos.saida_usd_por_milhao +
+          (l.cache_escrita_5m ?? 0) * precos.escrita_5m_usd_por_milhao +
+          (l.cache_escrita_1h ?? 0) * precos.escrita_1h_usd_por_milhao +
+          (l.cache_leitura ?? 0) * precos.leitura_usd_por_milhao) /
+        1_000_000
+      : 0;
 
   const totalCusto = linhas ? linhas.reduce((s, l) => s + custo(l), 0) : 0;
   const totalTrocas = linhas ? linhas.reduce((s, l) => s + l.trocas, 0) : 0;
@@ -533,6 +555,8 @@ export default function AdminPage() {
                     <th>Código</th>
                     <th>Trocas</th>
                     <th>Tokens (entrada)</th>
+                    <th>Tokens em cache (escrita)</th>
+                    <th>Tokens em cache (leitura)</th>
                     <th>Tokens (saída)</th>
                     <th>Custo (US$)</th>
                     <th></th>
@@ -545,6 +569,8 @@ export default function AdminPage() {
                       <td>{l.codigo}</td>
                       <td>{l.trocas}</td>
                       <td>{l.tokens_in.toLocaleString("pt-PT")}</td>
+                      <td>{((l.cache_escrita_5m ?? 0) + (l.cache_escrita_1h ?? 0)).toLocaleString("pt-PT")}</td>
+                      <td>{(l.cache_leitura ?? 0).toLocaleString("pt-PT")}</td>
                       <td>{l.tokens_out.toLocaleString("pt-PT")}</td>
                       <td>{custo(l).toFixed(3)}</td>
                       <td>
@@ -561,8 +587,10 @@ export default function AdminPage() {
             </div>
           )}
           <p className="muted" style={{ marginTop: 12 }}>
-            O custo é uma estimativa com os preços do Sonnet 5.5 (US$ {precos?.entrada_usd_por_milhao}/M de entrada e US${" "}
-            {precos?.saida_usd_por_milhao}/M de saída). O valor real está na consola da Anthropic.
+            O custo é uma estimativa com os preços do Sonnet 5.5, por milhão de tokens: US$ {precos?.entrada_usd_por_milhao} de
+            entrada, US$ {precos?.escrita_5m_usd_por_milhao} (5 min) ou US$ {precos?.escrita_1h_usd_por_milhao} (1 h) de
+            escrita na cache, US$ {precos?.leitura_usd_por_milhao} de leitura da cache e US$ {precos?.saida_usd_por_milhao} de
+            saída. &quot;Tokens (entrada)&quot; são só os que não vieram da cache. O valor real está na consola da Anthropic.
           </p>
         </section>
       )}
