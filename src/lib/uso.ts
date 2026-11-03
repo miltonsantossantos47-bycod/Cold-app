@@ -11,6 +11,18 @@ export type LinhaUso = {
   trocas: number;
   tokens_in: number;
   tokens_out: number;
+  cache_escrita_5m: number;
+  cache_escrita_1h: number;
+  cache_leitura: number;
+};
+
+// Tokens gastos numa troca. "entrada" são só os que NÃO vieram da cache.
+export type UsoTokens = {
+  entrada: number;
+  saida: number;
+  escrita5m: number;
+  escrita1h: number;
+  leitura: number;
 };
 
 const FICHEIRO = path.join(process.cwd(), ".data", "uso.json");
@@ -65,26 +77,46 @@ export async function lerTrocasDoDia(codigo: string, dia: string): Promise<numbe
   return linhas.find((l) => l.codigo === codigo && l.dia === dia)?.trocas ?? 0;
 }
 
-export async function registarTroca(codigo: string, dia: string, tokensIn: number, tokensOut: number) {
+export async function registarTroca(codigo: string, dia: string, uso: UsoTokens) {
   const sb = supabase();
   if (sb) {
-    const r = await fetch(`${sb.url}/rest/v1/rpc/registar_uso`, {
+    const r = await fetch(`${sb.url}/rest/v1/rpc/registar_uso_cache`, {
       method: "POST",
       headers: cabecalhos(sb.key),
-      body: JSON.stringify({ p_codigo: codigo, p_dia: dia, p_in: tokensIn, p_out: tokensOut }),
+      body: JSON.stringify({
+        p_codigo: codigo,
+        p_dia: dia,
+        p_in: uso.entrada,
+        p_out: uso.saida,
+        p_escrita_5m: uso.escrita5m,
+        p_escrita_1h: uso.escrita1h,
+        p_leitura: uso.leitura,
+      }),
     });
     if (!r.ok) throw new Error("Erro a registar o uso na Supabase.");
     return;
   }
   const linhas = await lerFicheiro();
-  const existente = linhas.find((l) => l.codigo === codigo && l.dia === dia);
-  if (existente) {
-    existente.trocas += 1;
-    existente.tokens_in += tokensIn;
-    existente.tokens_out += tokensOut;
-  } else {
-    linhas.push({ codigo, dia, trocas: 1, tokens_in: tokensIn, tokens_out: tokensOut });
+  let l = linhas.find((x) => x.codigo === codigo && x.dia === dia);
+  if (!l) {
+    l = {
+      codigo,
+      dia,
+      trocas: 0,
+      tokens_in: 0,
+      tokens_out: 0,
+      cache_escrita_5m: 0,
+      cache_escrita_1h: 0,
+      cache_leitura: 0,
+    };
+    linhas.push(l);
   }
+  l.trocas += 1;
+  l.tokens_in += uso.entrada;
+  l.tokens_out += uso.saida;
+  l.cache_escrita_5m = (l.cache_escrita_5m ?? 0) + uso.escrita5m;
+  l.cache_escrita_1h = (l.cache_escrita_1h ?? 0) + uso.escrita1h;
+  l.cache_leitura = (l.cache_leitura ?? 0) + uso.leitura;
   await gravarFicheiro(linhas);
 }
 
@@ -92,14 +124,22 @@ export async function listarUso(desdeDia: string): Promise<LinhaUso[]> {
   const sb = supabase();
   if (sb) {
     const r = await fetch(
-      `${sb.url}/rest/v1/uso_diario?dia=gte.${desdeDia}&select=codigo,dia,trocas,tokens_in,tokens_out&order=dia.desc`,
+      `${sb.url}/rest/v1/uso_diario?dia=gte.${desdeDia}&select=codigo,dia,trocas,tokens_in,tokens_out,cache_escrita_5m,cache_escrita_1h,cache_leitura&order=dia.desc`,
       { headers: cabecalhos(sb.key), cache: "no-store" }
     );
     if (!r.ok) throw new Error("Erro a listar o uso na Supabase.");
     return (await r.json()) as LinhaUso[];
   }
   const linhas = await lerFicheiro();
-  return linhas.filter((l) => l.dia >= desdeDia).sort((a, b) => (a.dia < b.dia ? 1 : -1));
+  return linhas
+    .filter((l) => l.dia >= desdeDia)
+    .map((l) => ({
+      ...l,
+      cache_escrita_5m: l.cache_escrita_5m ?? 0,
+      cache_escrita_1h: l.cache_escrita_1h ?? 0,
+      cache_leitura: l.cache_leitura ?? 0,
+    }))
+    .sort((a, b) => (a.dia < b.dia ? 1 : -1));
 }
 
 // Apaga linhas de uso de dias ANTERIORES a "antesDe" (nunca o dia de hoje: apagá-lo repunha os limites diários).
