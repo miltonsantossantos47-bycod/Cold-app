@@ -25,6 +25,30 @@ as $$
       tokens_out = uso_diario.tokens_out + excluded.tokens_out;
 $$;
 
+-- ---------- Prompt caching: tokens escritos e lidos da cache ----------
+-- Cola isto no SQL Editor e carrega em "Run". Podes correr mais do que uma vez sem estragar nada.
+-- (Enquanto não correres isto, o Cold continua a registar as trocas pela função antiga, sem os tokens de cache.)
+alter table uso_diario add column if not exists cache_escrita_5m bigint not null default 0;
+alter table uso_diario add column if not exists cache_escrita_1h bigint not null default 0;
+alter table uso_diario add column if not exists cache_leitura    bigint not null default 0;
+
+create or replace function registar_uso_cache(
+  p_codigo text, p_dia date, p_in int, p_out int, p_escrita_5m int, p_escrita_1h int, p_leitura int
+)
+returns void
+language sql
+as $$
+  insert into uso_diario (codigo, dia, trocas, tokens_in, tokens_out, cache_escrita_5m, cache_escrita_1h, cache_leitura)
+  values (p_codigo, p_dia, 1, p_in, p_out, p_escrita_5m, p_escrita_1h, p_leitura)
+  on conflict (codigo, dia) do update
+  set trocas           = uso_diario.trocas + 1,
+      tokens_in        = uso_diario.tokens_in + excluded.tokens_in,
+      tokens_out       = uso_diario.tokens_out + excluded.tokens_out,
+      cache_escrita_5m = uso_diario.cache_escrita_5m + excluded.cache_escrita_5m,
+      cache_escrita_1h = uso_diario.cache_escrita_1h + excluded.cache_escrita_1h,
+      cache_leitura    = uso_diario.cache_leitura + excluded.cache_leitura;
+$$;
+
 -- ---------- Assinaturas (planos por trocas/dia) ----------
 -- Cola isto no SQL Editor e carrega em "Run". Podes correr mais do que uma vez sem estragar nada.
 
@@ -95,23 +119,3 @@ create table if not exists pedidos (
 create index if not exists pedidos_user on pedidos (user_id, criado_em desc);
 create index if not exists pedidos_estado on pedidos (estado);
 alter table pedidos enable row level security;
-
-
--- ===== Cache de prompts: tokens de cache no registo de uso (idempotente) =====
-alter table uso_diario add column if not exists cache_escrita_5m bigint not null default 0;
-alter table uso_diario add column if not exists cache_escrita_1h bigint not null default 0;
-alter table uso_diario add column if not exists cache_leitura bigint not null default 0;
-
-create or replace function registar_uso_cache(
-  p_codigo text, p_dia date, p_in int, p_out int, p_escrita_5m int, p_escrita_1h int, p_leitura int)
-returns void language sql as $$
-  insert into uso_diario (codigo, dia, trocas, tokens_in, tokens_out, cache_escrita_5m, cache_escrita_1h, cache_leitura)
-  values (p_codigo, p_dia, 1, p_in, p_out, p_escrita_5m, p_escrita_1h, p_leitura)
-  on conflict (codigo, dia) do update
-  set trocas           = uso_diario.trocas + 1,
-      tokens_in        = uso_diario.tokens_in + excluded.tokens_in,
-      tokens_out       = uso_diario.tokens_out + excluded.tokens_out,
-      cache_escrita_5m = uso_diario.cache_escrita_5m + excluded.cache_escrita_5m,
-      cache_escrita_1h = uso_diario.cache_escrita_1h + excluded.cache_escrita_1h,
-      cache_leitura    = uso_diario.cache_leitura + excluded.cache_leitura;
-$$;

@@ -54,6 +54,7 @@ export async function POST(req: Request) {
       tipo: "normal",
       restantes: Math.max(0, r.limite - usadas),
       limite: r.limite,
+      extraDeOntem: r.extraDeOntem ?? 0,
       plano: r.plano ?? null,
       validoAte: r.validoAte ?? null,
       diasRestantes: r.diasRestantes ?? null,

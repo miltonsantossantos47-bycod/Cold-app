@@ -37,3 +37,6 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# o modelo de variaveis (sem valores reais) vai para o GitHub
+!.env.local.example

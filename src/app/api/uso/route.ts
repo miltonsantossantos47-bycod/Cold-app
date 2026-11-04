@@ -4,13 +4,14 @@ import { apagarUso, erroDeArmazenamento, listarUso } from "../../../lib/uso";
 
 export const dynamic = "force-dynamic";
 
-// Preços em dólares por milhão de tokens (Sonnet 5.5). Confirma na página de preços da Anthropic.
+// Preços em dólares por milhão de tokens do Claude Sonnet 5.5 (documentação de prompt caching da Anthropic):
+// entrada US$ 2; escrita na cache 1,25x (5 min) = 2,50 e 2x (1 h) = 4; leitura da cache 0,05x = 0,10; saída 10.
 const PRECOS = {
   entrada_usd_por_milhao: 2,
+  cache_escrita_5m_usd_por_milhao: 2.5,
+  cache_escrita_1h_usd_por_milhao: 4,
+  cache_leitura_usd_por_milhao: 0.1,
   saida_usd_por_milhao: 10,
-  escrita_5m_usd_por_milhao: 2.5,
-  escrita_1h_usd_por_milhao: 4,
-  leitura_usd_por_milhao: 0.1,
 };
 
 function admin(req: Request): boolean {

@@ -9,7 +9,7 @@ import {
   obterPedido,
   type Pedido,
 } from "../../../lib/pedidos";
-import { PERSONALIZADO, PLANOS, PRECO_TROCA_KZ, planoPorId, validarPersonalizado } from "../../../lib/planos";
+import { PLANOS, VALOR_MINIMO_PEDIDO_KZ, formatarKz, planoPorId, validarPersonalizado } from "../../../lib/planos";
 import { sessaoInvalida } from "../../../lib/respostas";
 import { contasAtivas, tokenDoPedido, verificarToken, type Usuario } from "../../../lib/sessao";
 
@@ -75,17 +75,21 @@ export async function POST(req: Request) {
     let preco: number;
     const plano = planoPorId(b.tipo);
     if (b.tipo === "personalizado") {
+      // limites de trocas e dias, e valor mínimo (as mesmas regras da página, mas aqui ninguém as contorna)
       const v = validarPersonalizado(b.trocas_dia, b.dias);
-      if (!v) return NextResponse.json({ error: `Escolhe entre ${PERSONALIZADO.trocasMin} e ${PERSONALIZADO.trocasMax} trocas por dia e entre ${PERSONALIZADO.diasMin} e ${PERSONALIZADO.diasMax} dias.` }, { status: 400 });
+      if (!v.ok) return NextResponse.json({ error: v.erro }, { status: 400 });
       trocas = v.trocas;
       dias = v.dias;
-      preco = trocas * dias * PRECO_TROCA_KZ; // sem desconto
+      preco = v.preco;
     } else if (plano && plano.publico && plano.precoKz > 0 && PLANOS.includes(plano)) {
       trocas = plano.trocasPorDia;
       dias = plano.dias;
       preco = plano.precoKz;
     } else {
       return NextResponse.json({ error: "Plano inválido." }, { status: 400 });
+    }
+    if (preco < VALOR_MINIMO_PEDIDO_KZ) {
+      return NextResponse.json({ error: `O valor mínimo por pedido é ${formatarKz(VALOR_MINIMO_PEDIDO_KZ)}.` }, { status: 400 });
     }
 
     const antigos = await listarPedidosDoUsuario(u.id);

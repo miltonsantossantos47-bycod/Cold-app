@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CONTAS_ATIVAS, contaDaSessao, entrarComGoogle, sessaoAtual, tokenAtual, type Conta } from "../../lib/auth-cliente";
-import { DESCONTO_PLANOS, PERSONALIZADO, PLANOS, PRECO_TROCA_KZ, formatarKz, precoBase } from "../../lib/planos";
+import {
+  DESCONTO_PLANOS,
+  PERSONALIZADO,
+  PLANOS,
+  PRECO_TROCA_KZ,
+  VALOR_MINIMO_PEDIDO_KZ,
+  formatarKz,
+  precoBase,
+  validarPersonalizado,
+} from "../../lib/planos";
 
 type PedidoVisto = {
   ref: string;
@@ -114,6 +123,8 @@ export default function PedirPlano({ numero, titular, whatsapp }: Props) {
   const tOk = Number.isInteger(trocas) && trocas >= PERSONALIZADO.trocasMin && trocas <= PERSONALIZADO.trocasMax;
   const dOk = Number.isInteger(dias) && dias >= PERSONALIZADO.diasMin && dias <= PERSONALIZADO.diasMax;
   const precoPers = tOk && dOk ? precoBase(trocas, dias) : 0;
+  const validacao = validarPersonalizado(trocas, dias); // as mesmas regras que o servidor aplica
+  const abaixoDoMinimo = tOk && dOk && precoPers < VALOR_MINIMO_PEDIDO_KZ;
   const fixos = PLANOS.filter((p) => p.publico && p.precoKz > 0);
   const teste = PLANOS.find((p) => p.id === "teste");
   const textoBotao = (txt: string) => (aEnviar ? "A criar o pedido…" : conta || !CONTAS_ATIVAS ? txt : "Entrar com Google para pedir");
@@ -184,31 +195,39 @@ export default function PedirPlano({ numero, titular, whatsapp }: Props) {
         ))}
       </div>
 
-      <div className="plano personalizado">
-        <h2>Plano personalizado</h2>
-        <p className="muted">Escolhe tu quantas trocas por dia e durante quantos dias.</p>
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="trocas">Trocas por dia ({PERSONALIZADO.trocasMin} a {PERSONALIZADO.trocasMax})</label>
-            <input id="trocas" type="number" inputMode="numeric" min={PERSONALIZADO.trocasMin} max={PERSONALIZADO.trocasMax} value={Number.isNaN(trocas) ? "" : trocas} onChange={(e) => setTrocas(e.target.value === "" ? NaN : Number(e.target.value))} />
+      {/* O personalizado fica em segundo plano: uma secção discreta que abre ao tocar. */}
+      <details className="monta-plano">
+        <summary>Precisas de outra combinação? Monta o teu plano</summary>
+        <div className="monta-plano-corpo">
+          <p className="muted">Escolhe tu quantas trocas por dia e durante quantos dias. Sem o desconto dos planos fixos.</p>
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="trocas">Trocas por dia ({PERSONALIZADO.trocasMin} a {PERSONALIZADO.trocasMax})</label>
+              <input id="trocas" type="number" inputMode="numeric" min={PERSONALIZADO.trocasMin} max={PERSONALIZADO.trocasMax} value={Number.isNaN(trocas) ? "" : trocas} onChange={(e) => setTrocas(e.target.value === "" ? NaN : Number(e.target.value))} />
+            </div>
+            <div className="field">
+              <label htmlFor="dias">Dias ({PERSONALIZADO.diasMin} a {PERSONALIZADO.diasMax})</label>
+              <input id="dias" type="number" inputMode="numeric" min={PERSONALIZADO.diasMin} max={PERSONALIZADO.diasMax} value={Number.isNaN(dias) ? "" : dias} onChange={(e) => setDias(e.target.value === "" ? NaN : Number(e.target.value))} />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="dias">Dias ({PERSONALIZADO.diasMin} a {PERSONALIZADO.diasMax})</label>
-            <input id="dias" type="number" inputMode="numeric" min={PERSONALIZADO.diasMin} max={PERSONALIZADO.diasMax} value={Number.isNaN(dias) ? "" : dias} onChange={(e) => setDias(e.target.value === "" ? NaN : Number(e.target.value))} />
+          <div className="preco" aria-live="polite">
+            {tOk && dOk ? formatarKz(precoPers) : "—"}
           </div>
+          <p className="muted">
+            {tOk && dOk
+              ? `${trocas} trocas por dia × ${dias} dias × ${formatarKz(PRECO_TROCA_KZ)}`
+              : `Escolhe entre ${PERSONALIZADO.trocasMin} e ${PERSONALIZADO.trocasMax} trocas por dia, e entre ${PERSONALIZADO.diasMin} e ${PERSONALIZADO.diasMax} dias.`}
+          </p>
+          {abaixoDoMinimo && (
+            <p className="alerta-minimo" role="status">
+              O valor mínimo por pedido é {formatarKz(VALOR_MINIMO_PEDIDO_KZ)}.
+            </p>
+          )}
+          <button className="btn" type="button" disabled={aEnviar || !validacao.ok} onClick={() => pedir({ tipo: "personalizado", trocas_dia: trocas, dias })}>
+            {textoBotao("Pedir plano personalizado")}
+          </button>
         </div>
-        <div className="preco" aria-live="polite">
-          {tOk && dOk ? formatarKz(precoPers) : "—"}
-        </div>
-        <p className="muted">
-          {tOk && dOk
-            ? `${trocas} trocas por dia × ${dias} dias × ${formatarKz(PRECO_TROCA_KZ)}`
-            : `Escolhe entre ${PERSONALIZADO.trocasMin} e ${PERSONALIZADO.trocasMax} trocas por dia, e entre ${PERSONALIZADO.diasMin} e ${PERSONALIZADO.diasMax} dias.`}
-        </p>
-        <button className="btn" type="button" disabled={aEnviar || !tOk || !dOk} onClick={() => pedir({ tipo: "personalizado", trocas_dia: trocas, dias })}>
-          {textoBotao("Pedir plano personalizado")}
-        </button>
-      </div>
+      </details>
 
       {erro && <div className="error" style={{ marginTop: 16 }}>{erro}</div>}
 
@@ -310,6 +329,11 @@ export default function PedirPlano({ numero, titular, whatsapp }: Props) {
         <li>Cada pedido é pago uma vez, para o período escolhido. Não há cobrança automática.</li>
         <li>Se pedires outro plano com um ativo, escolhes se começa <strong>depois</strong> (os dias somam-se, sem perderes nada) ou <strong>agora</strong>.</li>
         <li>O limite de trocas renova todos os dias à meia-noite (00:00, hora de Luanda).</li>
+        <li>
+          As trocas que não usares num dia passam para o dia seguinte, até metade do teu limite diário. Por exemplo, num plano
+          de 10 por dia, se usares só 4, no dia seguinte tens 15. Essas trocas extra valem só para esse dia. O teste grátis não
+          tem esta regra.
+        </li>
       </ul>
     </>
   );
