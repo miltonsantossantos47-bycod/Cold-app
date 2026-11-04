@@ -159,6 +159,8 @@ o ensino continue onde ficou, em vez de recomeçar do zero.
     resolveu sozinho), não só porque concordou contigo.
   - confunde: uma ideia errada concreta, em poucas palavras (ex.: "confunde energia com
     força", "acha que a velocidade é constante na queda").
+  - Escreve os textos por palavras simples, só a ideia: sem ids de lições (ex.: fis-1.5.3)
+    nem parênteses técnicos, porque o aluno vê estes textos.
   - resolvido: uma ideia errada da lista por resolver que o aluno já corrigiu; copia o
     texto exatamente como aparece no perfil.
   Só escreves esta linha quando há algo novo; na maioria das mensagens não há.

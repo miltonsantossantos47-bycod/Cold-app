@@ -14,10 +14,19 @@ const MAX_POR_RESPOSTA = 5;
 const MAX_DOMINA = 25; // o que vai para o prompt: os mais recentes
 const MAX_POR_RESOLVER = 15;
 
+// Tira ids de lições do currículo ("(fis-1.5.3)", "mat-1.2.1"): o aluno vê estes textos.
+export function semIdLicao(s: string): string {
+  return s
+    .replace(/\s*\(\s*[a-z]{2,5}-\d+(?:\.\d+)*\s*\)/gi, "")
+    .replace(/\b[a-z]{2,5}-\d+(?:\.\d+)+\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // Texto curto, numa linha e sem caracteres que possam abrir marcadores ou instruções.
 export function limparTextoMemoria(s: unknown): string {
   if (typeof s !== "string") return "";
-  return s
+  return semIdLicao(s)
     .replace(/[\[\]{}<>|;=\n\r\t]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -74,20 +83,21 @@ export function juntarMemoria(registos: RegistoMemoria[]): MemoriaAluno {
   const porResolver = new Map<string, string>();
   const parecidas = (a: string, b: string) => a === b || (a.length > 12 && b.includes(a)) || (b.length > 12 && a.includes(b));
   for (const r of [...registos].sort((a, b) => a.em - b.em)) {
-    const k = chave(r.x);
+    const x = semIdLicao(r.x); // também limpa registos antigos, guardados antes desta regra
+    const k = chave(x);
     if (!k) continue;
     if (r.t === "domina") {
       domina.delete(k);
-      domina.set(k, r.x);
+      domina.set(k, x);
     } else if (r.t === "confunde") {
       porResolver.delete(k);
-      porResolver.set(k, r.x);
+      porResolver.set(k, x);
     } else {
       porResolver.forEach((_, kk) => {
         if (parecidas(k, kk)) porResolver.delete(kk);
       });
       domina.delete(k);
-      const ideia = r.x.replace(/^já não /i, "");
+      const ideia = x.replace(/^já não /i, "");
       domina.set(k, `já não ${ideia.charAt(0).toLowerCase()}${ideia.slice(1)}`);
     }
   }
