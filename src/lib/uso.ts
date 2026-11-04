@@ -9,21 +9,24 @@ export type LinhaUso = {
   codigo: string;
   dia: string;
   trocas: number;
-  tokens_in: number;
+  tokens_in: number; // entrada sem cache (input_tokens da API)
   tokens_out: number;
+  // prompt caching (0 nos dias antes de existir, ou se a Supabase ainda não tiver as colunas)
   cache_escrita_5m: number;
   cache_escrita_1h: number;
   cache_leitura: number;
 };
 
-// Tokens gastos numa troca. "entrada" são só os que NÃO vieram da cache.
-export type UsoTokens = {
-  entrada: number;
+// Tokens de uma troca, como a API os devolve (somados nas continuações automáticas).
+export type TokensTroca = {
+  entrada: number; // input_tokens: não inclui o que foi escrito ou lido da cache
   saida: number;
-  escrita5m: number;
-  escrita1h: number;
-  leitura: number;
+  cacheEscrita5m: number;
+  cacheEscrita1h: number;
+  cacheLeitura: number;
 };
+
+const COLUNAS_CACHE = { cache_escrita_5m: 0, cache_escrita_1h: 0, cache_leitura: 0 };
 
 const FICHEIRO = path.join(process.cwd(), ".data", "uso.json");
 
@@ -77,68 +80,59 @@ export async function lerTrocasDoDia(codigo: string, dia: string): Promise<numbe
   return linhas.find((l) => l.codigo === codigo && l.dia === dia)?.trocas ?? 0;
 }
 
-export async function registarTroca(codigo: string, dia: string, uso: UsoTokens) {
+export async function registarTroca(codigo: string, dia: string, t: TokensTroca) {
   const sb = supabase();
   if (sb) {
+    const base = { p_codigo: codigo, p_dia: dia, p_in: t.entrada, p_out: t.saida };
     const r = await fetch(`${sb.url}/rest/v1/rpc/registar_uso_cache`, {
       method: "POST",
       headers: cabecalhos(sb.key),
-      body: JSON.stringify({
-        p_codigo: codigo,
-        p_dia: dia,
-        p_in: uso.entrada,
-        p_out: uso.saida,
-        p_escrita_5m: uso.escrita5m,
-        p_escrita_1h: uso.escrita1h,
-        p_leitura: uso.leitura,
-      }),
+      body: JSON.stringify({ ...base, p_escrita_5m: t.cacheEscrita5m, p_escrita_1h: t.cacheEscrita1h, p_leitura: t.cacheLeitura }),
     });
-    if (!r.ok) throw new Error("Erro a registar o uso na Supabase.");
+    if (r.ok) return;
+    // Ainda sem a função nova (falta correr o supabase.sql): regista como antes, para a troca contar
+    // sempre no limite diário. Os tokens de cache ficam por guardar.
+    console.error(`[uso] registar_uso_cache falhou (${r.status}); corre o supabase.sql. A usar registar_uso.`);
+    const antigo = await fetch(`${sb.url}/rest/v1/rpc/registar_uso`, {
+      method: "POST",
+      headers: cabecalhos(sb.key),
+      body: JSON.stringify(base),
+    });
+    if (!antigo.ok) throw new Error("Erro a registar o uso na Supabase.");
     return;
   }
   const linhas = await lerFicheiro();
   let l = linhas.find((x) => x.codigo === codigo && x.dia === dia);
   if (!l) {
-    l = {
-      codigo,
-      dia,
-      trocas: 0,
-      tokens_in: 0,
-      tokens_out: 0,
-      cache_escrita_5m: 0,
-      cache_escrita_1h: 0,
-      cache_leitura: 0,
-    };
+    l = { codigo, dia, trocas: 0, tokens_in: 0, tokens_out: 0, ...COLUNAS_CACHE };
     linhas.push(l);
   }
   l.trocas += 1;
-  l.tokens_in += uso.entrada;
-  l.tokens_out += uso.saida;
-  l.cache_escrita_5m = (l.cache_escrita_5m ?? 0) + uso.escrita5m;
-  l.cache_escrita_1h = (l.cache_escrita_1h ?? 0) + uso.escrita1h;
-  l.cache_leitura = (l.cache_leitura ?? 0) + uso.leitura;
+  l.tokens_in += t.entrada;
+  l.tokens_out += t.saida;
+  l.cache_escrita_5m = (l.cache_escrita_5m ?? 0) + t.cacheEscrita5m;
+  l.cache_escrita_1h = (l.cache_escrita_1h ?? 0) + t.cacheEscrita1h;
+  l.cache_leitura = (l.cache_leitura ?? 0) + t.cacheLeitura;
   await gravarFicheiro(linhas);
 }
 
 export async function listarUso(desdeDia: string): Promise<LinhaUso[]> {
   const sb = supabase();
   if (sb) {
-    const r = await fetch(
-      `${sb.url}/rest/v1/uso_diario?dia=gte.${desdeDia}&select=codigo,dia,trocas,tokens_in,tokens_out,cache_escrita_5m,cache_escrita_1h,cache_leitura&order=dia.desc`,
-      { headers: cabecalhos(sb.key), cache: "no-store" }
-    );
+    const pedir = (colunas: string) =>
+      fetch(`${sb.url}/rest/v1/uso_diario?dia=gte.${desdeDia}&select=${colunas}&order=dia.desc`, {
+        headers: cabecalhos(sb.key),
+        cache: "no-store",
+      });
+    let r = await pedir("codigo,dia,trocas,tokens_in,tokens_out,cache_escrita_5m,cache_escrita_1h,cache_leitura");
+    if (!r.ok) r = await pedir("codigo,dia,trocas,tokens_in,tokens_out"); // ainda sem as colunas de cache
     if (!r.ok) throw new Error("Erro a listar o uso na Supabase.");
-    return (await r.json()) as LinhaUso[];
+    return ((await r.json()) as Partial<LinhaUso>[]).map((l) => ({ ...COLUNAS_CACHE, ...l }) as LinhaUso);
   }
   const linhas = await lerFicheiro();
   return linhas
     .filter((l) => l.dia >= desdeDia)
-    .map((l) => ({
-      ...l,
-      cache_escrita_5m: l.cache_escrita_5m ?? 0,
-      cache_escrita_1h: l.cache_escrita_1h ?? 0,
-      cache_leitura: l.cache_leitura ?? 0,
-    }))
+    .map((l) => ({ ...COLUNAS_CACHE, ...l }))
     .sort((a, b) => (a.dia < b.dia ? 1 : -1));
 }
 

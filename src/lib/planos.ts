@@ -6,8 +6,14 @@ export type PlanoId = "teste" | "basico" | "estudante" | "intensivo" | "personal
 export const PRECO_TROCA_KZ = 60;
 export const DESCONTO_PLANOS = 0.3; // 30%
 
+// ---------- Limites dos pedidos (muda aqui) ----------
+// Mínimo de trocas por dia no personalizado: uma aula completa (diagnóstico + explicação + exercícios) leva 4 a 6 trocas.
+export const TROCAS_MIN_PERSONALIZADO = 5;
+// Valor mínimo de qualquer pedido (em kwanzas).
+export const VALOR_MINIMO_PEDIDO_KZ = 3000;
+
 // Limites do plano personalizado
-export const PERSONALIZADO = { trocasMin: 1, trocasMax: 50, diasMin: 1, diasMax: 90 };
+export const PERSONALIZADO = { trocasMin: TROCAS_MIN_PERSONALIZADO, trocasMax: 50, diasMin: 1, diasMax: 90 };
 
 export function precoBase(trocasPorDia: number, dias: number): number {
   return trocasPorDia * dias * PRECO_TROCA_KZ;
@@ -16,14 +22,24 @@ export function precoComDesconto(trocasPorDia: number, dias: number): number {
   return Math.round(precoBase(trocasPorDia, dias) * (1 - DESCONTO_PLANOS));
 }
 
-// Valida o que a pessoa escolheu no plano personalizado (nunca confiar no navegador).
-export function validarPersonalizado(trocas: unknown, dias: unknown): { trocas: number; dias: number } | null {
+// Valida o que a pessoa escolheu no plano personalizado. Usada na página (para desativar o botão)
+// e no servidor (que nunca confia no navegador), com as mesmas mensagens.
+export function validarPersonalizado(
+  trocas: unknown,
+  dias: unknown
+): { ok: true; trocas: number; dias: number; preco: number } | { ok: false; erro: string } {
   const t = typeof trocas === "number" ? trocas : Number(trocas);
   const d = typeof dias === "number" ? dias : Number(dias);
-  if (!Number.isInteger(t) || !Number.isInteger(d)) return null;
-  if (t < PERSONALIZADO.trocasMin || t > PERSONALIZADO.trocasMax) return null;
-  if (d < PERSONALIZADO.diasMin || d > PERSONALIZADO.diasMax) return null;
-  return { trocas: t, dias: d };
+  const p = PERSONALIZADO;
+  if (
+    !Number.isInteger(t) || !Number.isInteger(d) ||
+    t < p.trocasMin || t > p.trocasMax || d < p.diasMin || d > p.diasMax
+  ) {
+    return { ok: false, erro: `Escolhe entre ${p.trocasMin} e ${p.trocasMax} trocas por dia, e entre ${p.diasMin} e ${p.diasMax} dias.` };
+  }
+  const preco = precoBase(t, d); // sem desconto
+  if (preco < VALOR_MINIMO_PEDIDO_KZ) return { ok: false, erro: `O valor mínimo por pedido é ${formatarKz(VALOR_MINIMO_PEDIDO_KZ)}.` };
+  return { ok: true, trocas: t, dias: d, preco };
 }
 
 export type Plano = {
@@ -106,6 +122,16 @@ export const PLANOS: Plano[] = [
 
 export function planoPorId(id: unknown): Plano | null {
   return PLANOS.find((p) => p.id === id) ?? null;
+}
+
+// ---------- Trocas que passam para o dia seguinte ----------
+// À meia-noite (Luanda), as trocas não usadas passam para o dia seguinte, até metade do limite diário
+// (arredondado para baixo). Contam-se só contra o limite normal de ontem, por isso as trocas que vieram
+// de anteontem não voltam a passar (não fazem bola de neve). O teste grátis e os acessos internos não têm.
+export const PLANOS_COM_TRANSPORTE: PlanoId[] = ["basico", "estudante", "intensivo", "personalizado"];
+
+export function trocasQuePassam(limiteDiario: number, usadasOntem: number): number {
+  return Math.max(0, Math.min(Math.floor(limiteDiario / 2), limiteDiario - usadasOntem));
 }
 
 // Limite do dia: um limite próprio do código manda; senão o do plano (o teste dá mais trocas no 1.º dia).

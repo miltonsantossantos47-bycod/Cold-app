@@ -12,7 +12,8 @@ import {
   type Acesso,
 } from "./acessos";
 import { emailCanonico } from "./contacto";
-import { limiteDoPlano, planoPorId } from "./planos";
+import { PLANOS_COM_TRANSPORTE, limiteDoPlano, planoPorId, trocasQuePassam, type PlanoId } from "./planos";
+import { lerTrocasDoDia } from "./uso";
 import { contasAtivas, tokenDoPedido, verificarToken, type Usuario } from "./sessao";
 
 export type Resolucao =
@@ -21,8 +22,11 @@ export type Resolucao =
       ok: true;
       tipo: "normal";
       codigo: string; // o código em cujo nome se conta o uso
-      limite: number;
+      limite: number; // limite de hoje, já com as trocas que vieram de ontem
+      extraDeOntem?: number; // quantas dessas vieram de ontem
       origem: "env" | "assinatura";
+      planoId?: string;
+      inicio?: string;
       plano?: string;
       validoAte?: string;
       diasRestantes?: number;
@@ -63,6 +67,8 @@ async function avaliarAcesso(a: Acesso): Promise<Resolucao> {
     codigo: a.codigo,
     limite,
     origem: "assinatura",
+    planoId: plano?.id ?? a.plano,
+    inicio: a.inicio ?? undefined,
     plano: plano?.nome ?? a.plano,
     validoAte: a.valido_ate ?? undefined,
     diasRestantes: a.valido_ate ? diasEntre(hoje, a.valido_ate) + 1 : undefined,
@@ -128,6 +134,23 @@ export async function resolverConta(user: Usuario, reivindicar = true): Promise<
   return { ok: false, motivo: "inativo" };
 }
 
+// Junta ao limite de hoje as trocas que sobraram ontem (até metade do limite diário; ver planos.ts).
+// Não há nada a correr à meia-noite: calcula-se quando o limite é lido, a partir do uso de ontem.
+export async function comTrocasDeOntem(r: Resolucao): Promise<Resolucao> {
+  if (!r.ok || r.tipo !== "normal" || r.origem !== "assinatura") return r;
+  if (!r.planoId || !PLANOS_COM_TRANSPORTE.includes(r.planoId as PlanoId)) return r; // ex.: teste grátis
+  const ontem = somarDias(hojeEmLuanda(), -1);
+  if (r.inicio && r.inicio > ontem) return r; // o plano ainda não existia ontem
+  try {
+    const extra = trocasQuePassam(r.limite, await lerTrocasDoDia(r.codigo, ontem));
+    return extra > 0 ? { ...r, limite: r.limite + extra, extraDeOntem: extra } : r;
+  } catch (e) {
+    // Sem o uso de ontem, o aluno fica com o limite normal (nunca fica sem acesso por causa disto).
+    console.error("[trocas] não consegui ler o uso de ontem:", e);
+    return r;
+  }
+}
+
 export type Pedido =
   | { tipo: "sessao-invalida" }
   | { tipo: "resolucao"; resolucao: Resolucao; usuario: Usuario | null };
@@ -142,7 +165,7 @@ export async function resolverPedido(
     if (!contasAtivas() || !temSupabase()) return { tipo: "sessao-invalida" };
     const usuario = await verificarToken(token);
     if (!usuario) return { tipo: "sessao-invalida" };
-    return { tipo: "resolucao", resolucao: await resolverConta(usuario, opcoes.reivindicar ?? false), usuario };
+    return { tipo: "resolucao", resolucao: await comTrocasDeOntem(await resolverConta(usuario, opcoes.reivindicar ?? false)), usuario };
   }
-  return { tipo: "resolucao", resolucao: await resolverAcesso(codigoBruto), usuario: null };
+  return { tipo: "resolucao", resolucao: await comTrocasDeOntem(await resolverAcesso(codigoBruto)), usuario: null };
 }

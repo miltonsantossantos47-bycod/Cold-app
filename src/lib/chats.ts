@@ -1,5 +1,6 @@
 // Histórico de chats guardado na conta (tabela "chats" da Supabase; ver supabase.sql).
 import { cabecalhos, supabase } from "./uso";
+import { validarRegistos, type RegistoMemoria } from "./memoria";
 
 export type PerfilChat = {
   area?: string;
@@ -9,8 +10,10 @@ export type PerfilChat = {
   modulo_atual?: string;
   licao_atual?: string;
   dificuldades_recentes?: string;
+  fase_atual?: string;
+  memoria?: RegistoMemoria[]; // o que o tutor registou sobre o aluno neste chat (ver memoria.ts)
 };
-export type MsgChat = { role: "user" | "assistant"; content: string; hidden?: boolean };
+export type MsgChat = { role: "user" | "assistant"; content: string; hidden?: boolean; incompleta?: boolean };
 export type ChatDB = {
   id: string;
   titulo: string;
@@ -38,7 +41,7 @@ const MAX_CHATS = 100;
 const MAX_MSGS = 400;
 const MAX_TEXTO_MSG = 12000;
 const MAX_BYTES_CHAT = 300_000;
-const CAMPOS_PERFIL = ["area", "nivel_atual", "objetivo", "ritmo_semanal", "modulo_atual", "licao_atual", "dificuldades_recentes"] as const;
+const CAMPOS_PERFIL = ["area", "nivel_atual", "objetivo", "ritmo_semanal", "modulo_atual", "licao_atual", "dificuldades_recentes", "fase_atual"] as const;
 
 export function idValido(id: unknown): id is string {
   return typeof id === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(id);
@@ -61,6 +64,9 @@ export function validarChat(raw: unknown): ChatDB | null {
     if (typeof v !== "string" || v.length > 300) return null;
     perfil[k] = v;
   }
+  // memória mal formada perde-se, mas não impede o chat de ser guardado
+  const memoria = validarRegistos(p.memoria) ?? [];
+  if (memoria.length) perfil.memoria = memoria;
   if (!Array.isArray(c.msgs) || c.msgs.length > MAX_MSGS) return null;
   const msgs: MsgChat[] = [];
   for (const m of c.msgs) {
@@ -68,7 +74,12 @@ export function validarChat(raw: unknown): ChatDB | null {
     const mm = m as Record<string, unknown>;
     if (mm.role !== "user" && mm.role !== "assistant") return null;
     if (typeof mm.content !== "string" || mm.content.length > MAX_TEXTO_MSG) return null;
-    msgs.push({ role: mm.role, content: mm.content, ...(mm.hidden === true ? { hidden: true } : {}) });
+    msgs.push({
+      role: mm.role,
+      content: mm.content,
+      ...(mm.hidden === true ? { hidden: true } : {}),
+      ...(mm.incompleta === true ? { incompleta: true } : {}),
+    });
   }
   const chat: ChatDB = {
     id: c.id,

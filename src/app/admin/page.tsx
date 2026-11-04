@@ -8,7 +8,7 @@ type Linha = {
   codigo: string;
   dia: string;
   trocas: number;
-  tokens_in: number;
+  tokens_in: number; // entrada sem cache
   tokens_out: number;
   cache_escrita_5m: number;
   cache_escrita_1h: number;
@@ -16,10 +16,10 @@ type Linha = {
 };
 type Precos = {
   entrada_usd_por_milhao: number;
+  cache_escrita_5m_usd_por_milhao: number;
+  cache_escrita_1h_usd_por_milhao: number;
+  cache_leitura_usd_por_milhao: number;
   saida_usd_por_milhao: number;
-  escrita_5m_usd_por_milhao: number;
-  escrita_1h_usd_por_milhao: number;
-  leitura_usd_por_milhao: number;
 };
 type PlanoInfo = { id: string; nome: string; trocasPorDia: number; precoKz: number; dias: number; publico: boolean; criavel?: boolean };
 type AcessoInfo = {
@@ -263,13 +263,14 @@ export default function AdminPage() {
     }
   }
 
+  // Cada tipo de token tem o seu preço: entrada normal, escrita na cache (5 min ou 1 h), leitura da cache e saída.
   const custo = (l: Linha) =>
     precos
       ? (l.tokens_in * precos.entrada_usd_por_milhao +
-          l.tokens_out * precos.saida_usd_por_milhao +
-          (l.cache_escrita_5m ?? 0) * precos.escrita_5m_usd_por_milhao +
-          (l.cache_escrita_1h ?? 0) * precos.escrita_1h_usd_por_milhao +
-          (l.cache_leitura ?? 0) * precos.leitura_usd_por_milhao) /
+          (l.cache_escrita_5m ?? 0) * precos.cache_escrita_5m_usd_por_milhao +
+          (l.cache_escrita_1h ?? 0) * precos.cache_escrita_1h_usd_por_milhao +
+          (l.cache_leitura ?? 0) * precos.cache_leitura_usd_por_milhao +
+          l.tokens_out * precos.saida_usd_por_milhao) /
         1_000_000
       : 0;
 
@@ -588,8 +589,8 @@ export default function AdminPage() {
           )}
           <p className="muted" style={{ marginTop: 12 }}>
             O custo é uma estimativa com os preços do Sonnet 5.5, por milhão de tokens: US$ {precos?.entrada_usd_por_milhao} de
-            entrada, US$ {precos?.escrita_5m_usd_por_milhao} (5 min) ou US$ {precos?.escrita_1h_usd_por_milhao} (1 h) de
-            escrita na cache, US$ {precos?.leitura_usd_por_milhao} de leitura da cache e US$ {precos?.saida_usd_por_milhao} de
+            entrada, US$ {precos?.cache_escrita_5m_usd_por_milhao} (5 min) ou US$ {precos?.cache_escrita_1h_usd_por_milhao} (1 h) de
+            escrita na cache, US$ {precos?.cache_leitura_usd_por_milhao} de leitura da cache e US$ {precos?.saida_usd_por_milhao} de
             saída. &quot;Tokens (entrada)&quot; são só os que não vieram da cache. O valor real está na consola da Anthropic.
           </p>
         </section>
