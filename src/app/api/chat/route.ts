@@ -45,7 +45,7 @@ const PEDIDO_CONTINUAR =
   "e sem comentar a interrupção. Se parou a meio de uma palavra, começa pelo resto dessa palavra.";
 
 // Duração da cache (prompt caching). "1h": os alunos muitas vezes demoram mais de 5 minutos a responder
-// e, com "5m", a conversa inteira teria de ser escrita outra vez na cache. Com a leitura a 0,05x e a
+// e, com "5m", a conversa inteira teria de ser escrita outra vez na cache. Com a leitura a 0,1x e a
 // escrita de 1h a 2x (contra 1,25x), compensa quando mais de ~1 em cada 10 respostas passa dos 5 minutos.
 // ANTHROPIC_CACHE_TTL=5m volta à duração curta.
 const CACHE_TTL: "5m" | "1h" = process.env.ANTHROPIC_CACHE_TTL === "5m" ? "5m" : "1h";
