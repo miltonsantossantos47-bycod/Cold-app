@@ -348,6 +348,16 @@ function Potencias({ texto }: { texto: string }) {
   return <>{partes}</>;
 }
 
+// Código inline (`x^2`) fica tal como está escrito: as potências nunca se aplicam lá dentro.
+function ComCodigo({ texto }: { texto: string }) {
+  const partes = texto.split(/`([^`\n]+)`/g);
+  return (
+    <>
+      {partes.map((parte, i) => (i % 2 === 1 ? <code key={i}>{parte}</code> : <Potencias key={i} texto={parte} />))}
+    </>
+  );
+}
+
 function Negrito({ texto }: { texto: string }) {
   const partes = texto.split(/\*\*(.+?)\*\*/g);
   return (
@@ -355,11 +365,11 @@ function Negrito({ texto }: { texto: string }) {
       {partes.map((parte, i) =>
         i % 2 === 1 ? (
           <strong key={i}>
-            <Potencias texto={parte} />
+            <ComCodigo texto={parte} />
           </strong>
         ) : (
           <span key={i}>
-            <Potencias texto={parte} />
+            <ComCodigo texto={parte} />
           </span>
         )
       )}
@@ -504,7 +514,7 @@ function Texto({ texto }: { texto: string }) {
       despejar();
       partes.push(
         <span className="sec" key={partes.length}>
-          <Potencias texto={titulo[1].replace(/\*\*/g, "").trim()} />
+          <ComCodigo texto={titulo[1].replace(/\*\*/g, "").trim()} />
         </span>
       );
       if (i + 1 < linhas.length && linhas[i + 1].trim() === "") i++; // o título já muda de linha

@@ -94,6 +94,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
   white-space: pre; overflow-wrap: normal; word-break: normal; tab-size: 4;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+/* Código inline (`x^2`): monoespaçado, sem expoentes */
+.bubble code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em; background: var(--panel-2); padding: 1px 5px; border-radius: 4px;
+}
+.bubble.user code { background: rgba(255, 255, 255, 0.15); }
 .bubble ul, .bubble ol { padding-left: 1.25rem; margin: 6px 0; }
 .bubble ul { list-style: disc; }
 .bubble ol { list-style: decimal; }
