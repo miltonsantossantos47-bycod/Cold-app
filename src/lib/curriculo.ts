@@ -166,7 +166,7 @@ export const CURRICULO: Area[] = [
 ];
 
 // Para ativar as outras \u00e1reas e a op\u00e7\u00e3o "Outra \u00e1rea (escrever)", basta p\u00f4r isto a true.
-export const OUTRAS_AREAS_ATIVAS = false;
+export const OUTRAS_AREAS_ATIVAS = true;
 
 const AREAS_COM_CURRICULO = CURRICULO.map((a) => a.area);
 const AREAS_DESATIVADAS = [
