@@ -40,3 +40,9 @@ next-env.d.ts
 
 # o modelo de variaveis (sem valores reais) vai para o GitHub
 !.env.local.example
+
+# Cloudflare (OpenNext / wrangler)
+.open-next
+.wrangler
+.dev.vars
+cloudflare-env.d.ts

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import PedirPlano from "./pedir";
 
-export const dynamic = "force-dynamic"; // lê os dados de pagamento das variáveis da Vercel
+export const dynamic = "force-dynamic"; // lê os dados de pagamento das variáveis de ambiente
 
 export const metadata = { title: "Planos e como pagar — Cold" };
 

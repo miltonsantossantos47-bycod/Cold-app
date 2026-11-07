@@ -1,5 +1,5 @@
 // Registo de uso por código e por dia.
-// - Com SUPABASE_URL + SUPABASE_SECRET_KEY: guarda na Supabase (obrigatório em produção/Vercel).
+// - Com SUPABASE_URL + SUPABASE_SECRET_KEY: guarda na Supabase (obrigatório em produção: o Cloudflare não tem disco).
 //   (Também aceita o nome antigo SUPABASE_SERVICE_ROLE_KEY.)
 // - Sem Supabase, no teu computador: guarda no ficheiro .data/uso.json.
 import { promises as fs } from "fs";
@@ -38,7 +38,7 @@ export function supabase(): { url: string; key: string } | null {
 
 // Devolve uma mensagem de erro se não houver onde guardar o uso com segurança.
 export function erroDeArmazenamento(): string | null {
-  if (!supabase() && process.env.VERCEL) {
+  if (!supabase() && process.env.NODE_ENV === "production") {
     return "Falta configurar a Supabase (SUPABASE_URL e SUPABASE_SECRET_KEY) para guardar o uso em produção.";
   }
   return null;

@@ -1,4 +1,4 @@
-// Códigos de acesso e limite diário. Tudo vem de variáveis de ambiente (.env.local / Vercel).
+// Códigos de acesso e limite diário. Tudo vem de variáveis de ambiente (.env.local / painel do Cloudflare).
 export type TipoCodigo = "ilimitado" | "normal";
 
 function lista(v: string | undefined): string[] {
@@ -50,10 +50,10 @@ export function limiteDiario(codigo?: unknown): number {
 
 // "Hoje" em Luanda (UTC+1, sem hora de verão), no formato AAAA-MM-DD.
 // Só para testes no teu computador: COLD_HOJE=AAAA-MM-DD finge que hoje é esse dia
-// (serve para simular a passagem da meia-noite). Na Vercel é sempre ignorado.
+// (serve para simular a passagem da meia-noite). Em produção é sempre ignorado.
 export function hojeEmLuanda(): string {
   const fingido = process.env.COLD_HOJE?.trim();
-  if (fingido && !process.env.VERCEL && /^\d{4}-\d{2}-\d{2}$/.test(fingido)) return fingido;
+  if (fingido && process.env.NODE_ENV !== "production" && /^\d{4}-\d{2}-\d{2}$/.test(fingido)) return fingido;
   return new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
