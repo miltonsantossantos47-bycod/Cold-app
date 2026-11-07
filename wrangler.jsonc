@@ -1,0 +1,29 @@
+// Configuração do Worker do Cold no Cloudflare (gerado pelo @opennextjs/cloudflare).
+// Os segredos e variáveis NÃO ficam aqui: definem-se no painel do Cloudflare
+// (Settings > Variables and Secrets) ou com `npx wrangler secret put NOME`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cold-app",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  // nodejs_compat: o Next.js corre no runtime Node.js (não Edge).
+  // global_fetch_strictly_public: os fetch para a Anthropic e a Supabase saem pela internet pública.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      // Tem de ter o mesmo nome do Worker ("name" acima).
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "cold-app"
+    }
+  ],
+  // Logs no painel (Workers & Pages > cold-app > Observability).
+  "observability": {
+    "enabled": true
+  }
+  // No plano pago (Workers Paid) pode subir-se o limite de CPU por pedido, por exemplo:
+  // "limits": { "cpu_ms": 300000 }
+}

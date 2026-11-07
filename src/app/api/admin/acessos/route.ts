@@ -127,7 +127,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Código inválido (3 a 64 letras, números, - ou _)." }, { status: 400 });
       }
       if (manual && tipoDoCodigo(codigo)) {
-        return NextResponse.json({ error: "Esse código já existe nas variáveis da Vercel." }, { status: 409 });
+        return NextResponse.json({ error: "Esse código já existe nas variáveis de ambiente do servidor." }, { status: 409 });
       }
 
       const teste = plano.id === "teste";

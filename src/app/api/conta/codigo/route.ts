@@ -43,7 +43,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, codigo });
     }
 
-    // Código antigo do piloto (nas variáveis da Vercel): passa a existir na Supabase, ligado a esta conta.
+    // Código antigo do piloto (nas variáveis de ambiente): passa a existir na Supabase, ligado a esta conta.
     if (tipoDoCodigo(codigo) === "normal") {
       const criado = await criarAcesso({
         codigo,

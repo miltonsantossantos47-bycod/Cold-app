@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 import { SECCAO_PERFIL, SYSTEM_PROMPT } from "../../../lib/system-prompt";
 import { areaDisponivel, curriculoParaPrompt } from "../../../lib/curriculo";
@@ -11,6 +12,16 @@ import { erroDeArmazenamento, lerTrocasDoDia, registarTroca, type TokensTroca } 
 import { lerMemoria, limparMemoriaAluno, type MemoriaAluno } from "../../../lib/memoria";
 
 type Msg = { role: "user" | "assistant"; content: string };
+
+// Mantém o Worker do Cloudflare vivo até a tarefa acabar, mesmo que o aluno feche a ligação.
+// Fora do Cloudflare (sem contexto) não faz nada: aí o servidor já continua por si.
+function manterVivo(tarefa: Promise<unknown>) {
+  try {
+    getCloudflareContext().ctx.waitUntil(tarefa.catch(() => {}));
+  } catch {
+    // sem contexto do Cloudflare
+  }
+}
 
 type Perfil = {
   area?: string;
@@ -27,9 +38,8 @@ type Perfil = {
 // Fases da aula, pela ordem do método (o tutor indica-a em [[ESTADO: ...; fase=...]]).
 const FASES = ["diagnostico", "ensino", "exercicios", "revisao"];
 
-// Tempo máximo (segundos) que o Vercel deixa uma resposta demorar (300 = máximo do plano com Fluid Compute).
-// A resposta vai em streaming, por isso o aluno vê o texto a chegar enquanto isto corre.
-export const maxDuration = 300;
+// No Cloudflare Workers não há limite de tempo real enquanto o aluno estiver ligado, e a espera pela
+// Anthropic não conta como CPU. A resposta vai em streaming, por isso o aluno vê o texto a chegar.
 
 const MAX_CARACTERES_MENSAGEM = 4000;
 const MAX_CARACTERES_AREA = 80;
@@ -258,7 +268,10 @@ export async function POST(req: Request) {
   // Se o stream acabar sem "fim", o navegador trata a resposta como incompleta.
   const enc = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    start(controller) {
+      // No Cloudflare, quando o aluno carrega em "Parar" a ligação fecha e o pedido podia terminar antes
+      // de a troca ser registada na Supabase. manterVivo (waitUntil) deixa o registo acabar.
+      const tarefa = (async () => {
       const enviarEvento = (ev: Record<string, unknown>) => {
         try {
           controller.enqueue(enc.encode(JSON.stringify(ev) + "\n"));
@@ -368,6 +381,9 @@ export async function POST(req: Request) {
       } catch {
         // já fechado
       }
+      })();
+      manterVivo(tarefa);
+      return tarefa;
     },
     cancel() {
       parar.abort();
